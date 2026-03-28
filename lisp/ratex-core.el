@@ -21,9 +21,18 @@
   "Inline math rendering with RaTeX."
   :group 'tex)
 
-(defcustom ratex-backend-command
-  '("cargo" "run" "--quiet" "--manifest-path" "backend/Cargo.toml")
-  "Command used to start the RaTeX editor backend."
+(defcustom ratex-backend-binary
+  "backend/target/debug/ratex-editor-backend"
+  "Path to the compiled backend binary, relative to the project root."
+  :type 'string)
+
+(defcustom ratex-auto-build-backend t
+  "When non-nil, build the backend automatically if needed before startup."
+  :type 'boolean)
+
+(defcustom ratex-backend-build-command
+  '("cargo" "build" "--manifest-path" "backend/Cargo.toml")
+  "Command used to build the backend binary."
   :type '(repeat string))
 
 (defcustom ratex-font-size 16.0
@@ -36,32 +45,44 @@
 
 (defvar ratex--process nil)
 (defvar ratex--process-buffer " *ratex-backend*")
+(defvar ratex--build-buffer " *ratex-backend-build*")
 (defvar ratex--pending (make-hash-table :test #'eql))
 (defvar ratex--next-id 0)
 (defvar ratex--read-buffer "")
+(defvar ratex--build-process nil)
+(defvar ratex--startup-callbacks nil)
+(defvar ratex--build-warned nil)
 
 (defun ratex-backend-live-p ()
   "Return non-nil when the backend process is alive."
   (and ratex--process (process-live-p ratex--process)))
 
-(defun ratex-start-backend ()
-  "Start the backend process if needed."
-  (unless (ratex-backend-live-p)
-    (let* ((default-directory (ratex--project-root))
-           (program (car ratex-backend-command))
-           (args (cdr ratex-backend-command)))
-      (setq ratex--read-buffer "")
-      (setq ratex--process
-            (make-process
-             :name "ratex-backend"
-             :buffer ratex--process-buffer
-             :command (cons program args)
-             :coding 'utf-8-unix
-             :connection-type 'pipe
-             :noquery t
-             :filter #'ratex--process-filter
-             :sentinel #'ratex--process-sentinel))))
-  ratex--process)
+(defun ratex-start-backend (&optional callback)
+  "Start the backend process if needed.
+
+When CALLBACK is non-nil, invoke it with the live process once startup succeeds."
+  (cond
+   ((ratex-backend-live-p)
+    (when callback
+      (funcall callback ratex--process))
+    ratex--process)
+   ((ratex--build-in-progress-p)
+    (when callback
+      (push callback ratex--startup-callbacks))
+    nil)
+   ((ratex--backend-ready-p)
+    (ratex--launch-backend)
+    (when callback
+      (funcall callback ratex--process))
+    ratex--process)
+   (ratex-auto-build-backend
+    (when callback
+      (push callback ratex--startup-callbacks))
+    (ratex-build-backend)
+    nil)
+   (t
+    (ratex--warn "RaTeX backend binary is missing or stale. Run `M-x ratex-build-backend`.")
+    nil)))
 
 (defun ratex-stop-backend ()
   "Stop the backend process."
@@ -70,13 +91,35 @@
     (delete-process ratex--process))
   (setq ratex--process nil))
 
+(defun ratex-build-backend ()
+  "Build the backend binary asynchronously."
+  (interactive)
+  (unless (ratex--build-in-progress-p)
+    (let* ((default-directory (ratex--project-root))
+           (program (car ratex-backend-build-command))
+           (args (cdr ratex-backend-build-command)))
+      (setq ratex--build-warned nil)
+      (setq ratex--build-process
+            (make-process
+             :name "ratex-backend-build"
+             :buffer ratex--build-buffer
+             :command (cons program args)
+             :coding 'utf-8-unix
+             :connection-type 'pipe
+             :noquery t
+             :sentinel #'ratex--build-sentinel))
+      (message "Building RaTeX backend..."))))
+
 (defun ratex-request (payload callback)
   "Send PAYLOAD to backend and invoke CALLBACK with parsed response."
-  (let* ((proc (ratex-start-backend))
-         (id (cl-incf ratex--next-id))
-         (data (append (list (cons 'id id)) payload)))
+  (let ((id (cl-incf ratex--next-id))
+        (data nil))
+    (setq data (append (list (cons 'id id)) payload))
     (puthash id callback ratex--pending)
-    (process-send-string proc (concat (json-encode data) "\n"))
+    (ratex-start-backend
+     (lambda (proc)
+       (when (process-live-p proc)
+         (process-send-string proc (concat (json-encode data) "\n")))))
     id))
 
 (defun ratex-ping (callback)
@@ -116,6 +159,67 @@
     (clrhash ratex--pending)
     (setq ratex--process nil)))
 
+(defun ratex--launch-backend ()
+  "Launch the compiled backend binary."
+  (let* ((default-directory (ratex--project-root))
+         (binary (expand-file-name ratex-backend-binary default-directory)))
+    (setq ratex--read-buffer "")
+    (setq ratex--process
+          (make-process
+           :name "ratex-backend"
+           :buffer ratex--process-buffer
+           :command (list binary)
+           :coding 'utf-8-unix
+           :connection-type 'pipe
+           :noquery t
+           :filter #'ratex--process-filter
+           :sentinel #'ratex--process-sentinel))))
+
+(defun ratex--backend-ready-p ()
+  "Return non-nil if the backend binary exists and is newer than the sources."
+  (let* ((root (ratex--project-root))
+         (binary (expand-file-name ratex-backend-binary root)))
+    (and (file-exists-p binary)
+         (not (ratex--backend-source-newer-p binary)))))
+
+(defun ratex--backend-source-newer-p (binary)
+  "Return non-nil if any backend source file is newer than BINARY."
+  (let ((binary-time (file-attribute-modification-time (file-attributes binary)))
+        (files (directory-files-recursively
+                (expand-file-name "backend" (ratex--project-root))
+                "\\(?:\\.rs\\|Cargo\\.toml\\|Cargo\\.lock\\)\\'")))
+    (cl-some
+     (lambda (file)
+       (time-less-p binary-time
+                    (file-attribute-modification-time (file-attributes file))))
+     files)))
+
+(defun ratex--build-in-progress-p ()
+  "Return non-nil if a backend build is in progress."
+  (and ratex--build-process (process-live-p ratex--build-process)))
+
+(defun ratex--build-sentinel (proc event)
+  "Handle backend build PROC EVENT."
+  (unless (process-live-p proc)
+    (let ((success (= (process-exit-status proc) 0))
+          (callbacks (nreverse ratex--startup-callbacks)))
+      (setq ratex--build-process nil)
+      (setq ratex--startup-callbacks nil)
+      (if success
+          (progn
+            (message "RaTeX backend build finished.")
+            (ratex--launch-backend)
+            (dolist (callback callbacks)
+              (funcall callback ratex--process)))
+        (ratex--warn
+         (format "RaTeX backend build failed: %s" (string-trim event)))))))
+
+(defun ratex--warn (message-text)
+  "Show MESSAGE-TEXT once per startup failure burst."
+  (unless ratex--build-warned
+    (setq ratex--build-warned t)
+    (display-warning 'ratex message-text :warning)))
+
 (defun ratex--project-root ()
   "Return the root directory for ratex.el."
   (or (locate-dominating-file default-directory "backend/Cargo.toml")
@@ -124,4 +228,3 @@
 (provide 'ratex-core)
 
 ;;; ratex-core.el ends here
-

@@ -21,10 +21,18 @@ This repository now contains a minimal end-to-end prototype:
 
 ## Getting started
 
-Start the backend manually:
+Load [`ratex.el`](/Users/zhengxinyu/code/ratex.el/lisp/ratex.el) in Emacs and enable `ratex-mode`
+in a supported buffer. On first use, the package will automatically run:
+
+```bash
+cargo build --manifest-path backend/Cargo.toml
+```
+
+if the backend binary is missing or older than the backend sources. After that,
+Emacs launches the compiled binary directly from `backend/target/debug/`.
+
+For manual local development, you can still start the backend yourself:
 
 ```bash
 bin/dev-start-backend.sh
 ```
-
-Or enable `ratex-mode` in Emacs and let it launch the backend through Cargo.

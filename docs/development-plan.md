@@ -73,3 +73,9 @@ Responsibilities:
 2. Improve fragment detection for mode-specific syntax.
 3. Add better error surfacing and stale-request cancellation.
 4. Add packaging and integration tests.
+
+## Current prototype notes
+
+- Emacs now auto-builds the backend on first use when the binary is missing or stale.
+- The first startup path currently relies on Cargo being available in the user's environment.
+- Further polish should focus on mode-aware math detection and startup UX around build failures.

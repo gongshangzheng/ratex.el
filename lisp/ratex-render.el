@@ -15,6 +15,7 @@
 (defvar-local ratex--idle-timer nil)
 (defvar-local ratex--last-request-id nil)
 (defvar-local ratex--render-cache (make-hash-table :test #'equal))
+(defvar-local ratex--last-error nil)
 
 (defun ratex-render-fragment-at-point ()
   "Render the math fragment at point."
@@ -61,13 +62,18 @@
 (defun ratex--display-response (fragment response)
   "Display backend RESPONSE for FRAGMENT."
   (if (not (alist-get 'ok response))
-      (ratex-clear-overlay)
+      (progn
+        (setq ratex--last-error (alist-get 'error response))
+        (ratex-clear-overlay)
+        (when ratex--last-error
+          (message "RaTeX render failed: %s" ratex--last-error)))
     (let ((image (create-image
                   (alist-get 'svg response)
                   'svg t
                   :ascent (floor (* 100.0
                                     (/ (alist-get 'baseline response)
                                        (max 0.001 (alist-get 'height response))))))))
+      (setq ratex--last-error nil)
       (ratex-show-overlay
        (plist-get fragment :begin)
        (plist-get fragment :end)
@@ -77,4 +83,3 @@
 (provide 'ratex-render)
 
 ;;; ratex-render.el ends here
-

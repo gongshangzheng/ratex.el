@@ -12,6 +12,7 @@
 ;;; Code:
 
 (require 'ratex-core)
+(require 'ratex-overlays)
 (require 'ratex-render)
 
 ;;;###autoload
@@ -28,6 +29,12 @@
     (ratex-clear-overlay)))
 
 ;;;###autoload
+(defun ratex-build-backend-command ()
+  "Build the RaTeX backend."
+  (interactive)
+  (ratex-build-backend))
+
+;;;###autoload
 (defun ratex-setup ()
   "Enable `ratex-mode' in common text/math buffers."
   (interactive)
@@ -37,4 +44,3 @@
 (provide 'ratex)
 
 ;;; ratex.el ends here
-
