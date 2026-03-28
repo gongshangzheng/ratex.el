@@ -71,23 +71,55 @@
     (should (equal (alist-get 'height payload) 2.0))
     (should (equal (alist-get 'baseline payload) 1.0))))
 
-(ert-deftest ratex-renders-only-after-leaving-fragment ()
+(ert-deftest ratex-fragments-in-buffer-detects-multiple ()
   (with-temp-buffer
-    (insert "aa $x+1$ bb")
-    (goto-char 6)
+    (insert "a $x$ b \\[y+1\\] c")
+    (let ((fragments (ratex-fragments-in-buffer)))
+      (should (= (length fragments) 2))
+      (should (equal (mapcar (lambda (f) (plist-get f :content)) fragments)
+                     '("x" "y+1"))))))
+
+(ert-deftest ratex-fragments-to-render-excludes-active ()
+  (with-temp-buffer
+    (insert "a $x$ b $y$ c")
+    (goto-char 5)
+    (let* ((fragments (ratex-fragments-in-buffer))
+           (active (ratex-fragment-at-point))
+           (targets (ratex--fragments-to-render fragments active)))
+      (should (= (length fragments) 2))
+      (should (= (length targets) 1))
+      (should (equal (plist-get (car targets) :content) "y")))))
+
+(ert-deftest ratex-refresh-previews-renders-all-non-active ()
+  (with-temp-buffer
+    (insert "a $x$ b $y$ c")
+    (goto-char 5)
     (let (rendered)
-      (cl-letf (((symbol-function 'ratex--render-fragment)
+      (cl-letf (((symbol-function 'ratex--ensure-fragment-preview)
                  (lambda (fragment)
-                   (setq rendered fragment)))
-                ((symbol-function 'ratex-clear-overlay)
-                 (lambda () nil)))
-        (ratex-render-fragment-at-point)
-        (should (equal (plist-get ratex--active-fragment :content) "x+1"))
-        (should-not rendered)
-        (goto-char 9)
-        (ratex-render-fragment-at-point)
-        (should (equal (plist-get rendered :content) "x+1"))
-        (should-not ratex--active-fragment)))))
+                   (push (plist-get fragment :content) rendered)))
+                ((symbol-function 'ratex--drop-stale-overlays)
+                 (lambda (_keys) nil)))
+        (ratex-refresh-previews)
+        (should (equal rendered '("y")))))))
+
+(ert-deftest ratex-dispatches-responses-in-origin-buffer ()
+  (let ((origin (generate-new-buffer " *ratex-origin*"))
+        (process-buffer (generate-new-buffer " *ratex-process*")))
+    (unwind-protect
+        (with-current-buffer origin
+          (clrhash ratex--pending)
+          (let ((seen-buffer nil))
+            (ratex-request
+             '((type . "ping"))
+             (lambda (_response)
+               (setq seen-buffer (current-buffer))))
+            (with-current-buffer process-buffer
+              (ratex--dispatch-line "{\"id\":1,\"ok\":true}"))
+            (should (eq seen-buffer origin))))
+      (kill-buffer origin)
+      (kill-buffer process-buffer)
+      (clrhash ratex--pending))))
 
 (provide 'ratex-tests)
 

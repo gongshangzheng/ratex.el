@@ -112,10 +112,10 @@ Supported delimiters in the current prototype:
 - `\(...\)`
 - `\[...\]`
 
-You can also trigger the transition logic manually with:
+You can also trigger a full buffer refresh manually with:
 
 ```elisp
-M-x ratex-render-fragment-at-point
+M-x ratex-refresh-previews
 ```
 
 If needed, you can rebuild the backend manually with:

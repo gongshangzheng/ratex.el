@@ -110,10 +110,10 @@ cargo build --manifest-path backend/Cargo.toml
 - `\(...\)`
 - `\[...\]`
 
-也可以手动触发这套状态切换逻辑：
+也可以手动触发当前 buffer 的全量预览刷新：
 
 ```elisp
-M-x ratex-render-fragment-at-point
+M-x ratex-refresh-previews
 ```
 
 如果你想手动重新编译 backend：

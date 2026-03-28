@@ -21,12 +21,11 @@
   :lighter " RaTeX"
   (if ratex-mode
       (progn
-        (setq ratex--active-fragment nil)
         (add-hook 'post-command-hook #'ratex-handle-post-command nil t)
-        (ratex-start-backend))
+        (ratex-start-backend)
+        (ratex-refresh-previews))
     (remove-hook 'post-command-hook #'ratex-handle-post-command t)
-    (setq ratex--active-fragment nil)
-    (ratex-clear-overlay)))
+    (ratex-clear-overlays)))
 
 ;;;###autoload
 (defun ratex-build-backend-command ()

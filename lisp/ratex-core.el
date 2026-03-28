@@ -131,9 +131,16 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
 (defun ratex-request (payload callback)
   "Send PAYLOAD to backend and invoke CALLBACK with parsed response."
   (let ((id (cl-incf ratex--next-id))
+        (origin-buffer (current-buffer))
         (data nil))
     (setq data (append (list (cons 'id id)) payload))
-    (puthash id callback ratex--pending)
+    (puthash
+     id
+     (lambda (response)
+       (when (buffer-live-p origin-buffer)
+         (with-current-buffer origin-buffer
+           (funcall callback response))))
+     ratex--pending)
     (ratex-start-backend
      (lambda (proc)
        (when (process-live-p proc)
