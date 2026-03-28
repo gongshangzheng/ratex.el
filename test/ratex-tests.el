@@ -41,6 +41,12 @@
       (let ((default-directory root))
         (should (ratex--backend-source-newer-p binary-file))))))
 
+(ert-deftest ratex-project-root-follows-library-location ()
+  (let ((default-directory "/tmp/"))
+    (should (string-prefix-p
+             "/Users/zhengxinyu/code/ratex.el"
+             (directory-file-name (ratex--project-root))))))
+
 (provide 'ratex-tests)
 
 ;;; ratex-tests.el ends here

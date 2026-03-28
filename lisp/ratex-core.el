@@ -53,6 +53,15 @@
 (defvar ratex--startup-callbacks nil)
 (defvar ratex--build-warned nil)
 
+(defun ratex-root ()
+  "Return the installed root directory of ratex.el."
+  (file-name-directory
+   (directory-file-name
+    (file-name-directory
+     (or load-file-name
+         (locate-library "ratex-core.el")
+         (buffer-file-name))))))
+
 (defun ratex-backend-live-p ()
   "Return non-nil when the backend process is alive."
   (and ratex--process (process-live-p ratex--process)))
@@ -222,8 +231,7 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
 
 (defun ratex--project-root ()
   "Return the root directory for ratex.el."
-  (or (locate-dominating-file default-directory "backend/Cargo.toml")
-      default-directory))
+  (ratex-root))
 
 (provide 'ratex-core)
 
