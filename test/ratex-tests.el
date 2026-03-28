@@ -15,6 +15,12 @@
     (let ((fragment (ratex-fragment-at-point)))
       (should (equal (plist-get fragment :content) "x^2")))))
 
+(ert-deftest ratex-does-not-detect-after-closing-delimiter ()
+  (with-temp-buffer
+    (insert "aa $x+1$ bb")
+    (goto-char 9)
+    (should-not (ratex-fragment-at-point))))
+
 (ert-deftest ratex-detects-bracket-math ()
   (with-temp-buffer
     (insert "a \\[x+1\\] b")
@@ -78,7 +84,7 @@
         (ratex-render-fragment-at-point)
         (should (equal (plist-get ratex--active-fragment :content) "x+1"))
         (should-not rendered)
-        (goto-char 1)
+        (goto-char 9)
         (ratex-render-fragment-at-point)
         (should (equal (plist-get rendered :content) "x+1"))
         (should-not ratex--active-fragment)))))
