@@ -53,9 +53,15 @@ Set this when auto-detection cannot reliably find the backend location."
   "Default SVG padding sent to the backend."
   :type 'number)
 
-(defcustom ratex-edit-preview-posframe nil
-  "When non-nil, show formula previews in a posframe while editing."
-  :type 'boolean)
+(defcustom ratex-edit-preview nil
+  "Preview style used while editing formulas.
+
+Set to nil to disable edit previews, `posframe' to show a floating preview,
+or `minibuffer' to show the preview in the minibuffer.
+"
+  :type '(choice (const :tag "Disable" nil)
+                 (const :tag "Posframe" posframe)
+                 (const :tag "Minibuffer" minibuffer)))
 
 (defcustom ratex-render-color nil
   "Default formula color sent to backend rendering.
