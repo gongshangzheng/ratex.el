@@ -154,6 +154,7 @@ $\frac{1}{2}$
 - `ratex-font-size`：发送给 backend 的 SVG 字号
 - `ratex-svg-padding`：发送给 backend 的 SVG 边距
 - `ratex-render-color`：公式默认渲染颜色（例如 `#e6e6e6`、`red`、`[RGB]178,34,34`）
+- `ratex-edit-preview-posframe`：编辑时用 posframe 显示预览并自动更新
 - `ratex-auto-build-backend`：是否自动编译 backend
 - `ratex-backend-build-command`：backend 编译命令
 - `ratex-backend-binary`：backend 二进制路径
@@ -165,6 +166,7 @@ $\frac{1}{2}$
 (setq ratex-font-size 18.0)
 (setq ratex-svg-padding 3.0)
 (setq ratex-render-color "#4b5563")
+(setq ratex-edit-preview-posframe t)
 ```
 
 如果你的加载方式比较特殊，自动探测 backend 路径仍然失败，建议直接设置

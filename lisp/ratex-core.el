@@ -53,12 +53,28 @@ Set this when auto-detection cannot reliably find the backend location."
   "Default SVG padding sent to the backend."
   :type 'number)
 
+(defcustom ratex-edit-preview-posframe nil
+  "When non-nil, show formula previews in a posframe while editing."
+  :type 'boolean)
+
 (defcustom ratex-render-color nil
   "Default formula color sent to backend rendering.
 
 Use nil to keep backend defaults."
   :type '(choice (const :tag "Backend default" nil)
                  string))
+
+(defcustom ratex-posframe-background-color "white"
+  "Background color for RaTeX posframe preview."
+  :type 'string)
+
+(defcustom ratex-posframe-border-color "gray70"
+  "Border color for RaTeX posframe preview."
+  :type 'string)
+
+(defcustom ratex-posframe-poshandler 'ratex-posframe-poshandler-point-bottom-left-corner-offset
+  "Poshandler function used to place the RaTeX posframe preview."
+  :type 'function)
 
 (defvar ratex--process nil)
 (defvar ratex--process-buffer " *ratex-backend*")
@@ -308,12 +324,27 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
            (dir (file-name-directory full)))
       (cond
        ((not dir) nil)
+       ((ratex--valid-root-p (ratex--straight-repo-root dir))
+        (ratex--straight-repo-root dir))
        ((string-match-p "/lisp/?\\'" dir)
         (file-name-directory (directory-file-name dir)))
        ((file-directory-p full)
         full)
        (t
         (locate-dominating-file dir "backend/Cargo.toml"))))))
+
+(defun ratex--straight-repo-root (path)
+  "Return a straight.el repo root mapped from PATH, or nil."
+  (when (string-match "\\(.*/straight\\)/build/\\([^/]+\\)/" path)
+    (let* ((base (match-string 1 path))
+           (pkg (match-string 2 path))
+           (repos (expand-file-name "repos" base))
+           (candidate-a (expand-file-name pkg repos))
+           (candidate-b (expand-file-name (concat pkg ".el") repos)))
+      (cond
+       ((ratex--valid-root-p candidate-a) candidate-a)
+       ((ratex--valid-root-p candidate-b) candidate-b)
+       (t nil)))))
 
 (defun ratex--valid-root-p (path)
   "Return non-nil when PATH looks like a valid ratex.el root."

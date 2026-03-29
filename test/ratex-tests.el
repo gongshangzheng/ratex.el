@@ -301,6 +301,19 @@
         (ratex-handle-post-command)
         (should (equal ensured '("x")))))))
 
+(ert-deftest ratex-edit-preview-posframe-keeps-overlay ()
+  (with-temp-buffer
+    (insert "$x$")
+    (let ((fragment '(:begin 1 :end 4 :content "x" :open "$" :close "$")))
+      (setq-local ratex-mode t)
+      (setq-local ratex-edit-preview-posframe t)
+      (ratex-reset-buffer-state)
+      (ratex-show-overlay "1:4:x" 1 4 "IMG" nil fragment)
+      (goto-char 2)
+      (ratex-handle-post-command)
+      (let ((overlay (ratex-overlay-for-key "1:4:x")))
+        (should-not (overlayp overlay))))))
+
 (ert-deftest ratex-inflight-shared-formula-renders-all-waiters ()
   (with-temp-buffer
     (insert "$A$ xx $A$")
