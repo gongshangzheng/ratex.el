@@ -83,6 +83,12 @@
     (when (hash-table-p table)
       (gethash key table))))
 
+(defun ratex-overlay-image-for-key (key)
+  "Return the rendered image for overlay KEY, or nil."
+  (let ((overlay (ratex-overlay-for-key key)))
+    (when (overlayp overlay)
+      (overlay-get overlay 'ratex-image))))
+
 (defun ratex-set-overlay-style (key style)
   "Set STYLE for overlay KEY."
   (let ((overlay (ratex-overlay-for-key key)))

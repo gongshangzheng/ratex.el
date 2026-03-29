@@ -45,16 +45,11 @@
   (ratex-diagnose-backend))
 
 ;;;###autoload
-(defun ratex-show-posframe-command ()
-  "Show a RaTeX posframe preview at point."
-  (interactive)
-  (ratex-show-posframe-at-point))
-
 ;;;###autoload
-(defun ratex-hide-posframe-command ()
-  "Hide the RaTeX posframe preview."
+(defun ratex-toggle-preview-command ()
+  "Toggle RaTeX preview at point."
   (interactive)
-  (ratex-hide-posframe))
+  (ratex-toggle-preview-at-point))
 
 ;;;###autoload
 (defun ratex-setup ()

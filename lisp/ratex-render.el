@@ -22,6 +22,7 @@
 (defvar-local ratex--active-fragment nil)
 (defvar-local ratex--posframe-visible nil)
 (defvar-local ratex--posframe-fragment nil)
+(defvar-local ratex--preview-enabled nil)
 (defconst ratex--posframe-buffer " *ratex-preview*")
 (defconst ratex--posframe-offset-y 5)
 
@@ -33,7 +34,8 @@
   (setq-local ratex--last-error nil)
   (setq-local ratex--active-fragment nil)
   (setq-local ratex--posframe-visible nil)
-  (setq-local ratex--posframe-fragment nil))
+  (setq-local ratex--posframe-fragment nil)
+  (setq-local ratex--preview-enabled nil))
 
 (defun ratex-refresh-previews (&optional include-active)
   "Refresh math previews in current buffer.
@@ -54,6 +56,7 @@ currently under point."
 (defun ratex-initialize-previews ()
   "Render all formulas once and initialize point tracking."
   (ratex-refresh-previews t)
+  (setq ratex--preview-enabled (and ratex-edit-preview-posframe t))
   (setq ratex--active-fragment (ratex-fragment-at-point))
   (when ratex--active-fragment
     (ratex-remove-overlay (ratex--fragment-key ratex--active-fragment))))
@@ -61,32 +64,52 @@ currently under point."
 (defun ratex-handle-post-command ()
   "Update previews only when point enters/leaves math fragments."
   (when ratex-mode
-    (ratex--update-posframe-position)
+    (when (ratex--preview-enabled-p)
+      (ratex--update-posframe-position))
     (let ((current (ratex--active-fragment-at-point))
           (previous ratex--active-fragment))
-      (cond
-       ((and previous current (ratex--same-active-context-p previous current))
-        (when (ratex-edit-preview-posframe-enabled-p)
-          (ratex-remove-overlay (ratex--fragment-key current))
-          (ratex--ensure-fragment-preview current)))
-       ((and previous current)
-        (ratex--hide-posframe)
-        (ratex--ensure-fragment-preview previous)
-        (if (ratex-edit-preview-posframe-enabled-p)
-            (progn
-              (ratex-remove-overlay (ratex--fragment-key current))
-              (ratex--ensure-fragment-preview current))
-          (ratex-remove-overlay (ratex--fragment-key current))))
-       (current
-        (if (ratex-edit-preview-posframe-enabled-p)
-            (progn
-              (ratex-remove-overlay (ratex--fragment-key current))
-              (ratex--ensure-fragment-preview current))
-          (ratex-remove-overlay (ratex--fragment-key current))))
-       (previous
-        (ratex--hide-posframe)
-        (ratex--ensure-fragment-preview previous)))
+      (unless (and previous current
+                   (ratex--same-active-context-p previous current))
+        (when previous
+          (ratex--ensure-fragment-preview previous)))
+      (when current
+        (ratex-remove-overlay (ratex--fragment-key current)))
+      (when (ratex--preview-enabled-p)
+        (ratex--handle-preview-at-point current))
       (setq ratex--active-fragment current))))
+
+(defun ratex--handle-preview-at-point (fragment)
+  "Show posframe preview for FRAGMENT when enabled; otherwise hide it."
+  (if (and fragment (ratex--preview-enabled-p))
+      (let* ((image (ratex--overlay-image-for-fragment fragment))
+             (cached (unless image (ratex--cached-response-for-fragment fragment))))
+        (ratex-remove-overlay (ratex--fragment-key fragment))
+        (unless (ratex--display-posframe fragment cached image)
+          (ratex--ensure-fragment-preview fragment))
+        (ratex--update-posframe-position))
+    (ratex--hide-posframe)))
+
+(defun ratex--overlay-image-for-fragment (fragment)
+  "Return cached overlay image for FRAGMENT, or nil."
+  (let ((key (ratex--fragment-key fragment)))
+    (ratex-overlay-image-for-key key)))
+
+(defun ratex--cached-response-for-fragment (fragment)
+  "Return cached backend response for FRAGMENT, or nil."
+  (let ((cache-key (ratex--cache-key fragment)))
+    (when (hash-table-p ratex--render-cache)
+      (gethash cache-key ratex--render-cache))))
+
+(defun ratex--image-from-response (response)
+  "Build an image object from backend RESPONSE."
+  (let* ((svg (alist-get 'svg response))
+         (baseline (or (alist-get 'baseline response) 0.0))
+         (height (max 0.001 (or (alist-get 'height response) 0.0))))
+    (when svg
+      (create-image
+       svg
+       'svg t
+       :ascent (floor (* 100.0 (/ baseline height)))))))
 
 (defun ratex--active-fragment-at-point ()
   "Return editable fragment at point, including rendered overlay fallback."
@@ -216,8 +239,8 @@ currently under point."
          (remhash cache-key (ratex--inflight-table))
          (let ((waiters (gethash cache-key (ratex--inflight-waiters-table))))
            (remhash cache-key (ratex--inflight-waiters-table))
-           (when (alist-get 'ok response)
-             (puthash cache-key response ratex--render-cache))
+      (when (alist-get 'ok response)
+        (puthash cache-key response ratex--render-cache))
            (when ratex-mode
              (dolist (entry waiters)
                (ratex--display-if-visible
@@ -232,18 +255,11 @@ currently under point."
      ((not (ratex--fragment-valid-p fragment))
       (ratex-remove-overlay fragment-key))
      ((and active (ratex--same-active-context-p fragment active))
-      (if (ratex-edit-preview-posframe-enabled-p)
+      (if (ratex--preview-enabled-p)
           (progn
             (ratex-remove-overlay fragment-key)
             (unless (ratex--display-posframe fragment response)
-              (ratex-show-overlay
-               fragment-key
-               (plist-get fragment :begin)
-               (plist-get fragment :end)
-               (create-image (alist-get 'svg response) 'svg t)
-               "RaTeX render"
-               fragment
-               'inline)))
+              (ratex--ensure-fragment-preview fragment)))
         (ratex-remove-overlay fragment-key)))
      (t
       (ratex--display-response fragment-key fragment response 'inline)))))
@@ -256,19 +272,13 @@ currently under point."
         (ratex-remove-overlay fragment-key)
         (when ratex--last-error
           (message "RaTeX render failed: %s" ratex--last-error)))
-    (let* ((svg (alist-get 'svg response))
-           (baseline (or (alist-get 'baseline response) 0.0))
-           (height (max 0.001 (or (alist-get 'height response) 0.0)))
-           (image (create-image
-                   svg
-                   'svg t
-                   :ascent (floor (* 100.0 (/ baseline height))))))
+    (let ((image (ratex--image-from-response response)))
       (setq ratex--last-error nil)
-      (if (and (ratex-edit-preview-posframe-enabled-p)
+      (if (and (ratex--preview-enabled-p)
                (ratex--point-in-fragment-p fragment))
           (progn
             (ratex-remove-overlay fragment-key)
-            (ratex--display-posframe fragment response))
+            (ratex--display-posframe fragment response image))
         (ratex-show-overlay
          fragment-key
          (plist-get fragment :begin)
@@ -283,25 +293,24 @@ currently under point."
   (and ratex-edit-preview-posframe
        (ratex--ensure-posframe-loaded)))
 
+(defun ratex--preview-enabled-p ()
+  "Return non-nil when the preview toggle and posframe are enabled."
+  (and ratex--preview-enabled
+       (ratex-edit-preview-posframe-enabled-p)))
+
 (defun ratex--ensure-posframe-loaded ()
   "Return non-nil when posframe is available; load it if needed."
   (or (featurep 'posframe)
       (require 'posframe nil t)))
 
-(defun ratex--display-posframe (fragment response)
-  "Display RESPONSE in a posframe for FRAGMENT."
+(defun ratex--display-posframe (fragment &optional response image)
+  "Display IMAGE (or RESPONSE) in a posframe for FRAGMENT."
   (when (and (ratex-edit-preview-posframe-enabled-p)
              (featurep 'posframe)
              (fboundp 'posframe-workable-p)
              (posframe-workable-p)
              (ratex--point-in-fragment-p fragment))
-    (let* ((svg (alist-get 'svg response))
-           (baseline (or (alist-get 'baseline response) 0.0))
-           (height (max 0.001 (or (alist-get 'height response) 0.0)))
-           (image (create-image
-                   svg
-                   'svg t
-                   :ascent (floor (* 100.0 (/ baseline height))))))
+    (let ((image (or image (and response (ratex--image-from-response response)))))
       (when image
         (with-current-buffer (get-buffer-create ratex--posframe-buffer)
           (erase-buffer)
@@ -351,20 +360,20 @@ currently under point."
          :background-color ratex-posframe-background-color)
       (ratex--hide-posframe))))
 
-(defun ratex-show-posframe-at-point ()
-  "Show a RaTeX posframe preview for the formula at point."
+(defun ratex-toggle-preview-at-point ()
+  "Toggle the RaTeX posframe preview for the formula at point."
   (interactive)
-  (let ((fragment (ratex--active-fragment-at-point)))
-    (when (and fragment (ratex-edit-preview-posframe-enabled-p))
-      (ratex--ensure-fragment-preview fragment))))
-
-(defun ratex-hide-posframe ()
-  "Hide the RaTeX posframe preview."
-  (interactive)
-  (ratex--hide-posframe))
+  (when (ratex-edit-preview-posframe-enabled-p)
+    (setq ratex--preview-enabled (not ratex--preview-enabled))
+    (if ratex--preview-enabled
+        (ratex--handle-preview-at-point (ratex--active-fragment-at-point))
+      (ratex--hide-posframe)
+      (let ((fragment (ratex--active-fragment-at-point)))
+        (when fragment
+          (ratex--ensure-fragment-preview fragment))))))
 
 (defun ratex-handle-buffer-switch ()
-  "Hide posframe when switching buffers."
+  "Clear previews for all ratex buffers when switching buffers."
   (when ratex-edit-preview-posframe
     (dolist (buffer (buffer-list))
       (with-current-buffer buffer
