@@ -8,6 +8,10 @@ upstream [RaTeX](https://github.com/erweixin/RaTeX) engine.
 It is designed to render LaTeX math fragments inside Emacs with a small async
 backend, SVG output, and minimal setup.
 
+## Demo
+
+![ratex.el demo](./assets/demo.gif)
+
 ## Features
 
 - Async inline math preview inside Emacs
