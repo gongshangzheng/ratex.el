@@ -27,14 +27,17 @@
       (delete-overlay overlay))
     (remhash key table)))
 
-(defun ratex-show-overlay (key beg end image &optional help-echo)
-  "Show IMAGE for KEY at BEG..END with optional HELP-ECHO."
+(defun ratex-show-overlay (key beg end image &optional help-echo fragment style)
+  "Show IMAGE for KEY at BEG..END with optional HELP-ECHO, FRAGMENT, and STYLE."
   (let ((table (ratex--overlay-table))
         (overlay nil))
     (ratex-remove-overlay key)
     (setq overlay (make-overlay beg end))
-    (overlay-put overlay 'display image)
+    (overlay-put overlay 'ratex-image image)
     (overlay-put overlay 'evaporate t)
+    (overlay-put overlay 'ratex-key key)
+    (overlay-put overlay 'ratex-fragment fragment)
+    (ratex--overlay-apply-style overlay (or style 'inline))
     (puthash key overlay table))
   (when help-echo
     (overlay-put (gethash key (ratex--overlay-table)) 'help-echo help-echo)))
@@ -47,6 +50,57 @@
                  (push key keys))
                ratex--overlays))
     keys))
+
+(defun ratex--overlay-entry-at-point ()
+  "Return (KEY . OVERLAY) for a visible RaTeX overlay at point, or nil."
+  (let ((pos (point))
+        found)
+    (when (hash-table-p ratex--overlays)
+      (maphash
+       (lambda (key overlay)
+         (when (and (not found)
+                    (overlayp overlay)
+                    (overlay-buffer overlay)
+                    (<= (overlay-start overlay) pos)
+                    (< pos (overlay-end overlay)))
+           (setq found (cons key overlay))))
+       ratex--overlays))
+    found))
+
+(defun ratex-rendered-overlay-at-point-p ()
+  "Return non-nil when point is inside a visible RaTeX rendered overlay."
+  (and (ratex--overlay-entry-at-point) t))
+
+(defun ratex-overlay-fragment-at-point ()
+  "Return fragment metadata from the RaTeX overlay at point, or nil."
+  (let ((entry (ratex--overlay-entry-at-point)))
+    (when entry
+      (overlay-get (cdr entry) 'ratex-fragment))))
+
+(defun ratex-overlay-for-key (key)
+  "Return the overlay for KEY, or nil."
+  (let ((table (ratex--overlay-table)))
+    (when (hash-table-p table)
+      (gethash key table))))
+
+(defun ratex-set-overlay-style (key style)
+  "Set STYLE for overlay KEY."
+  (let ((overlay (ratex-overlay-for-key key)))
+    (when (overlayp overlay)
+      (ratex--overlay-apply-style overlay style))))
+
+(defun ratex--overlay-apply-style (overlay style)
+  "Apply STYLE to OVERLAY using its stored image."
+  (let ((image (overlay-get overlay 'ratex-image)))
+    (cond
+     ((eq style 'below)
+      (overlay-put overlay 'display nil)
+      (overlay-put overlay 'after-string
+                   (concat "\n" (propertize " " 'display image) "\n")))
+     (t
+      (overlay-put overlay 'after-string nil)
+      (overlay-put overlay 'display image))))
+  (overlay-put overlay 'ratex-render-style style))
 
 (provide 'ratex-overlays)
 

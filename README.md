@@ -157,6 +157,8 @@ Useful variables:
 - `ratex-backend-root`: explicit repository root for backend discovery
 - `ratex-font-size`: SVG font size sent to the backend
 - `ratex-svg-padding`: SVG padding sent to the backend
+- `ratex-render-color`: default formula color (for example `#e6e6e6`, `red`, `[RGB]178,34,34`)
+- `ratex-edit-preview-posframe`: show preview in a posframe while editing
 - `ratex-auto-build-backend`: whether to build automatically
 - `ratex-backend-build-command`: build command
 - `ratex-backend-binary`: backend binary path
@@ -167,6 +169,8 @@ Example:
 (setq ratex-backend-root "/path/to/ratex.el/")
 (setq ratex-font-size 18.0)
 (setq ratex-svg-padding 3.0)
+(setq ratex-render-color "#4b5563")
+(setq ratex-edit-preview-posframe t)
 ```
 
 If backend auto-discovery still fails in your setup, set `ratex-backend-root`

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use ratex_layout::{layout, to_display_list, LayoutOptions};
 use ratex_parser::parser::parse;
 use ratex_svg::{render_to_svg, SvgOptions};
+use ratex_types::color::Color;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -15,6 +16,7 @@ struct Request {
     latex: Option<String>,
     font_size: Option<f64>,
     padding: Option<f64>,
+    color: Option<String>,
     embed_glyphs: Option<bool>,
     font_dir: Option<String>,
 }
@@ -50,6 +52,7 @@ struct CacheKey {
     latex: String,
     font_size: u64,
     padding: u64,
+    color: String,
     embed_glyphs: bool,
     font_dir: String,
 }
@@ -143,6 +146,15 @@ fn render_request(
         .ok_or((request.id, "missing non-empty `latex` field".to_string()))?;
     let font_size = request.font_size.unwrap_or(16.0);
     let padding = request.padding.unwrap_or(2.0);
+    let color = request
+        .color
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            Color::parse(value).ok_or((request.id, format!("invalid `color` value: {value}")))
+        })
+        .transpose()?;
     let embed_glyphs = request.embed_glyphs.unwrap_or(true);
     let font_dir = request
         .font_dir
@@ -154,6 +166,7 @@ fn render_request(
         latex: latex.to_string(),
         font_size: font_size.to_bits(),
         padding: padding.to_bits(),
+        color: color.map(|value| value.to_string()).unwrap_or_default(),
         embed_glyphs,
         font_dir: font_dir.clone(),
     };
@@ -166,7 +179,12 @@ fn render_request(
     }
 
     let nodes = parse(latex).map_err(|err| (request.id, format!("parse error: {err}")))?;
-    let layout_box = layout(&nodes, &LayoutOptions::default());
+    let layout_options = if let Some(value) = color {
+        LayoutOptions::default().with_color(value)
+    } else {
+        LayoutOptions::default()
+    };
+    let layout_box = layout(&nodes, &layout_options);
     let display_list = to_display_list(&layout_box);
     let svg = render_to_svg(
         &display_list,

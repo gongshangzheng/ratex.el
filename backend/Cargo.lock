@@ -156,6 +156,7 @@ dependencies = [
  "ratex-layout",
  "ratex-parser",
  "ratex-svg",
+ "ratex-types",
  "serde",
  "serde_json",
 ]
