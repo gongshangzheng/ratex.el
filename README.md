@@ -98,12 +98,13 @@ After that, Emacs launches the compiled backend binary directly.
 
 The current interaction model is:
 
+- when `ratex-mode` is enabled, formulas in the current buffer are rendered once
 - when point enters a math fragment, preview is hidden
-- while point stays inside that fragment, nothing is rendered
-- when point leaves that fragment, `ratex.el` immediately renders it
+- while point stays inside that fragment, no continuous rendering is triggered
+- when point leaves that fragment, only that fragment is rendered again
 
-In other words, editing suppresses preview, and leaving the formula triggers
-preview refresh.
+In other words, `ratex.el` avoids full refresh on every command and uses a
+"render once on open + hide while editing + rerender on leave" flow.
 
 Supported delimiters in the current prototype:
 
@@ -111,6 +112,12 @@ Supported delimiters in the current prototype:
 - `$$...$$`
 - `\(...\)`
 - `\[...\]`
+
+These cases are skipped by default and will not be rendered:
+
+- formulas inside code blocks (for example Org src/example/verbatim blocks and
+  Markdown fenced code blocks)
+- escaped delimiters (for example `\$`, `\\(`, `\\[`)
 
 You can also trigger a full buffer refresh manually with:
 

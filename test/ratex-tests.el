@@ -4,6 +4,7 @@
 
 (require 'ert)
 (require 'json)
+(require 'ratex)
 (require 'ratex-core)
 (require 'ratex-render)
 (require 'ratex-math-detect)
@@ -28,6 +29,41 @@
     (let ((fragment (ratex-fragment-at-point)))
       (should (equal (plist-get fragment :content) "x+1")))))
 
+(ert-deftest ratex-ignores-escaped-delimiters ()
+  (with-temp-buffer
+    (insert "price \\$5 and \\\\(x\\\\) and $y$")
+    (let ((fragments (ratex-fragments-in-buffer)))
+      (should (= (length fragments) 1))
+      (should (equal (plist-get (car fragments) :content) "y")))))
+
+(ert-deftest ratex-fragment-at-point-ignores-escaped-delimiters ()
+  (with-temp-buffer
+    (insert "a \\$x$ b")
+    (goto-char 6)
+    (should-not (ratex-fragment-at-point)))
+  (with-temp-buffer
+    (insert "a \\\\(x\\\\) b")
+    (goto-char 6)
+    (should-not (ratex-fragment-at-point))))
+
+(ert-deftest ratex-skips-formulas-in-code-context ()
+  (with-temp-buffer
+    (insert "$x$ $y$")
+    (cl-letf (((symbol-function 'ratex--code-context-at-p)
+               (lambda (pos)
+                 (<= pos 3))))
+      (let ((fragments (ratex-fragments-in-buffer)))
+        (should (= (length fragments) 1))
+        (should (equal (plist-get (car fragments) :content) "y"))))))
+
+(ert-deftest ratex-fragment-at-point-skips-code-context ()
+  (with-temp-buffer
+    (insert "$x$")
+    (goto-char 2)
+    (cl-letf (((symbol-function 'ratex--code-context-at-p)
+               (lambda (_pos) t)))
+      (should-not (ratex-fragment-at-point)))))
+
 (ert-deftest ratex-backend-source-newer-detects-changes ()
   (let* ((root (make-temp-file "ratex-test" t))
          (backend-dir (expand-file-name "backend/src" root))
@@ -51,9 +87,10 @@
 
 (ert-deftest ratex-project-root-follows-library-location ()
   (let ((default-directory "/tmp/"))
-    (should (string-prefix-p
-             "/Users/zhengxinyu/code/ratex.el"
-             (directory-file-name (ratex--project-root))))))
+    (let ((root (directory-file-name (ratex--project-root))))
+      (should (file-directory-p root))
+      (should (file-exists-p (expand-file-name "backend/Cargo.toml" root)))
+      (should (file-directory-p (expand-file-name "lisp" root))))))
 
 (ert-deftest ratex-backend-root-override-wins ()
   (let ((ratex-backend-root "/tmp/ratex-root/"))
@@ -102,6 +139,75 @@
                  (lambda (_keys) nil)))
         (ratex-refresh-previews)
         (should (equal rendered '("y")))))))
+
+(ert-deftest ratex-refresh-previews-renders-all-with-include-active ()
+  (with-temp-buffer
+    (insert "a $x$ b $y$ c")
+    (goto-char 5)
+    (let (rendered)
+      (cl-letf (((symbol-function 'ratex--ensure-fragment-preview)
+                 (lambda (fragment)
+                   (push (plist-get fragment :content) rendered)))
+                ((symbol-function 'ratex--drop-stale-overlays)
+                 (lambda (_keys) nil)))
+        (ratex-refresh-previews t)
+        (should (equal (sort rendered #'string<) '("x" "y")))))))
+
+(ert-deftest ratex-initialize-previews-renders-all-then-hides-active ()
+  (with-temp-buffer
+    (insert "a $x$ b")
+    (goto-char 4)
+    (let (include-active removed-key)
+      (cl-letf (((symbol-function 'ratex-refresh-previews)
+                 (lambda (&optional include)
+                   (setq include-active include)))
+                ((symbol-function 'ratex-remove-overlay)
+                 (lambda (key)
+                   (setq removed-key key))))
+        (ratex-initialize-previews)
+        (should include-active)
+        (should (equal removed-key "3:6:x"))
+        (should (equal (plist-get ratex--active-fragment :content) "x"))))))
+
+(ert-deftest ratex-post-command-hides-on-enter-and-renders-on-leave ()
+  (with-temp-buffer
+    (insert "a $x$ b")
+    (let (removed ensured)
+      (setq-local ratex-mode t)
+      (setq-local ratex--active-fragment nil)
+      (cl-letf (((symbol-function 'ratex-remove-overlay)
+                 (lambda (key)
+                   (push key removed)))
+                ((symbol-function 'ratex--ensure-fragment-preview)
+                 (lambda (fragment)
+                   (push (plist-get fragment :content) ensured))))
+        (goto-char 4)
+        (ratex-handle-post-command)
+        (should (equal removed '("3:6:x")))
+        (should-not ensured)
+        (setq removed nil)
+        (goto-char 7)
+        (ratex-handle-post-command)
+        (should-not removed)
+        (should (equal ensured '("x")))))))
+
+(ert-deftest ratex-post-command-ignores-edits-inside-same-fragment ()
+  (with-temp-buffer
+    (insert "a $x$ b")
+    (goto-char 4)
+    (setq-local ratex-mode t)
+    (setq-local ratex--active-fragment (ratex-fragment-at-point))
+    (insert "y")
+    (let (removed ensured)
+      (cl-letf (((symbol-function 'ratex-remove-overlay)
+                 (lambda (key)
+                   (push key removed)))
+                ((symbol-function 'ratex--ensure-fragment-preview)
+                 (lambda (fragment)
+                   (push (plist-get fragment :content) ensured))))
+        (ratex-handle-post-command)
+        (should-not removed)
+        (should-not ensured)))))
 
 (ert-deftest ratex-dispatches-responses-in-origin-buffer ()
   (let ((origin (generate-new-buffer " *ratex-origin*"))

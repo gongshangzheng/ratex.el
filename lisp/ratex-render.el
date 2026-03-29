@@ -8,27 +8,58 @@
 (require 'ratex-math-detect)
 (require 'ratex-overlays)
 
-(defvar-local ratex--render-cache (make-hash-table :test #'equal))
+(defvar ratex-mode)
+(defvar-local ratex--render-cache nil)
 (defvar-local ratex--inflight-requests nil)
 (defvar-local ratex--last-error nil)
+(defvar-local ratex--active-fragment nil)
 
-(defun ratex-refresh-previews ()
+(defun ratex-reset-buffer-state ()
+  "Reset buffer-local rendering state."
+  (setq-local ratex--render-cache (make-hash-table :test #'equal))
+  (setq-local ratex--inflight-requests (make-hash-table :test #'equal))
+  (setq-local ratex--last-error nil)
+  (setq-local ratex--active-fragment nil))
+
+(defun ratex-refresh-previews (&optional include-active)
   "Refresh math previews in current buffer.
 
-All formulas are rendered except the one currently under point."
+When INCLUDE-ACTIVE is non-nil, render all formulas, including the one
+currently under point."
   (interactive)
   (let* ((fragments (ratex-fragments-in-buffer))
          (active (ratex-fragment-at-point))
-         (targets (ratex--fragments-to-render fragments active))
+         (targets (if include-active
+                      fragments
+                    (ratex--fragments-to-render fragments active)))
          (target-keys (mapcar #'ratex--fragment-key targets)))
     (ratex--drop-stale-overlays target-keys)
     (dolist (fragment targets)
       (ratex--ensure-fragment-preview fragment))))
 
+(defun ratex-initialize-previews ()
+  "Render all formulas once and initialize point tracking."
+  (ratex-refresh-previews t)
+  (setq ratex--active-fragment (ratex-fragment-at-point))
+  (when ratex--active-fragment
+    (ratex-remove-overlay (ratex--fragment-key ratex--active-fragment))))
+
 (defun ratex-handle-post-command ()
-  "Update previews after each command."
+  "Update previews only when point enters/leaves math fragments."
   (when ratex-mode
-    (ratex-refresh-previews)))
+    (let ((current (ratex-fragment-at-point))
+          (previous ratex--active-fragment))
+      (cond
+       ((and previous current (ratex--same-active-context-p previous current))
+        nil)
+       ((and previous current)
+        (ratex--ensure-fragment-preview previous)
+        (ratex-remove-overlay (ratex--fragment-key current)))
+       (current
+        (ratex-remove-overlay (ratex--fragment-key current)))
+       (previous
+        (ratex--ensure-fragment-preview previous)))
+      (setq ratex--active-fragment current))))
 
 (defun ratex--fragments-to-render (fragments active)
   "Return FRAGMENTS excluding ACTIVE."
@@ -42,6 +73,11 @@ All formulas are rendered except the one currently under point."
   (and (= (plist-get a :begin) (plist-get b :begin))
        (= (plist-get a :end) (plist-get b :end))
        (equal (plist-get a :content) (plist-get b :content))))
+
+(defun ratex--same-active-context-p (a b)
+  "Return non-nil when A and B are part of the same editing fragment."
+  (or (ratex--same-fragment-p a b)
+      (ratex--fragments-overlap-p a b)))
 
 (defun ratex--fragment-key (fragment)
   "Return stable overlay key for FRAGMENT."
@@ -62,6 +98,19 @@ All formulas are rendered except the one currently under point."
     (setq-local ratex--inflight-requests (make-hash-table :test #'equal)))
   ratex--inflight-requests)
 
+(defun ratex--fragment-valid-p (fragment)
+  "Return non-nil when FRAGMENT still matches current buffer text."
+  (let ((begin (plist-get fragment :begin))
+        (end (plist-get fragment :end))
+        (open (plist-get fragment :open))
+        (content (plist-get fragment :content))
+        (close (plist-get fragment :close)))
+    (and (integer-or-marker-p begin)
+         (integer-or-marker-p end)
+         (<= (point-min) begin end (point-max))
+         (string= (buffer-substring-no-properties begin end)
+                  (concat open content close)))))
+
 (defun ratex--drop-stale-overlays (target-keys)
   "Delete overlays not present in TARGET-KEYS."
   (let ((keep (make-hash-table :test #'equal)))
@@ -78,6 +127,8 @@ All formulas are rendered except the one currently under point."
          (cached (gethash cache-key ratex--render-cache))
          (inflight (gethash cache-key (ratex--inflight-table))))
     (cond
+     ((not (ratex--fragment-valid-p fragment))
+      (ratex-remove-overlay fragment-key))
      (cached
       (ratex--display-response fragment-key fragment cached))
      (inflight nil)
@@ -98,16 +149,11 @@ All formulas are rendered except the one currently under point."
 
 (defun ratex--display-if-visible (fragment-key fragment response)
   "Display RESPONSE for FRAGMENT-KEY if FRAGMENT should still be visible."
-  (let* ((active (ratex-fragment-at-point))
-         (fragments (ratex-fragments-in-buffer))
-         (current (cl-find-if
-                   (lambda (candidate)
-                     (equal (ratex--fragment-key candidate) fragment-key))
-                   fragments)))
-    (if (or (not current)
-            (and active (ratex--same-fragment-p current active)))
+  (let ((active (ratex-fragment-at-point)))
+    (if (or (not (ratex--fragment-valid-p fragment))
+            (and active (ratex--same-active-context-p fragment active)))
         (ratex-remove-overlay fragment-key)
-      (ratex--display-response fragment-key current response))))
+      (ratex--display-response fragment-key fragment response))))
 
 (defun ratex--display-response (fragment-key fragment response)
   "Display backend RESPONSE for FRAGMENT identified by FRAGMENT-KEY."

@@ -21,31 +21,47 @@
   "Return the math fragment around point as a plist.
 
 The plist contains `:begin', `:end' and `:content' when a fragment is found."
-  (cl-loop for (open . close) in ratex--delimiter-pairs
-           for fragment = (ratex--fragment-with-delimiters open close)
-           when fragment
-           return fragment))
+  (unless (ratex--code-context-at-p (point))
+    (cl-loop for (open . close) in ratex--delimiter-pairs
+             for fragment = (ratex--fragment-with-delimiters open close)
+             when fragment
+             return fragment)))
 
 (defun ratex--fragment-with-delimiters (open close)
   "Return fragment bounded by OPEN and CLOSE around point."
   (save-excursion
     (let ((pos (point))
-          begin end content-begin content-end)
-      (when (search-backward open nil t)
-        (setq begin (point))
-        (setq content-begin (+ begin (length open)))
-        (goto-char content-begin)
-        (when (search-forward close nil t)
-          (setq end (point))
-          (setq content-end (- end (length close)))
-          (when (and (<= content-begin pos) (<= pos content-end))
-            (list :begin begin
-                  :end end
-                  :content (buffer-substring-no-properties
-                            content-begin
-                            content-end)
-                  :open open
-                  :close close)))))))
+          (open-len (length open))
+          (close-len (length close))
+          fragment)
+      (while (and (not fragment) (search-backward open nil t))
+        (let ((begin (point)))
+          (if (or (ratex--escaped-at-p begin)
+                  (ratex--code-context-at-p begin))
+              (goto-char (max (point-min) (1- begin)))
+            (let ((content-begin (+ begin open-len))
+                  found-end
+                  content-end)
+              (goto-char content-begin)
+              (while (and (not found-end) (search-forward close nil t))
+                (let ((end-start (- (point) close-len)))
+                  (unless (or (ratex--escaped-at-p end-start)
+                              (ratex--code-context-at-p end-start))
+                    (setq found-end (point))
+                    (setq content-end end-start))))
+              (if (and found-end
+                       (<= content-begin pos)
+                       (<= pos content-end))
+                  (setq fragment
+                        (list :begin begin
+                              :end found-end
+                              :content (buffer-substring-no-properties
+                                        content-begin
+                                        content-end)
+                              :open open
+                              :close close))
+                (goto-char (max (point-min) (1- begin))))))))
+      fragment)))
 
 (defun ratex--fragments-with-delimiters (open close)
   "Return all OPEN..CLOSE fragments in the current buffer."
@@ -56,13 +72,15 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
           fragments)
       (while (search-forward open nil t)
         (let ((begin (- (point) open-len)))
-          (unless (ratex--escaped-at-p begin)
+          (unless (or (ratex--escaped-at-p begin)
+                      (ratex--code-context-at-p begin))
             (let ((content-begin (point))
                   found-end
                   content-end)
               (while (and (not found-end) (search-forward close nil t))
                 (let ((end-start (- (point) close-len)))
-                  (unless (ratex--escaped-at-p end-start)
+                  (unless (or (ratex--escaped-at-p end-start)
+                              (ratex--code-context-at-p end-start))
                     (setq found-end (point))
                     (setq content-end end-start))))
               (when (and found-end (<= content-begin content-end))
@@ -109,6 +127,27 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
       (setq count (1+ count))
       (setq i (1- i)))
     (= 1 (% count 2))))
+
+(defun ratex--code-context-at-p (pos)
+  "Return non-nil when POS is in a code-like context."
+  (save-excursion
+    (goto-char pos)
+    (or (nth 3 (syntax-ppss))
+        (nth 4 (syntax-ppss))
+        (ratex--mode-code-context-p))))
+
+(defun ratex--mode-code-context-p ()
+  "Return non-nil when point is in a mode-specific code block."
+  (cond
+   ((derived-mode-p 'org-mode)
+    (or (and (fboundp 'org-in-src-block-p)
+             (org-in-src-block-p t))
+        (and (fboundp 'org-in-block-p)
+             (org-in-block-p '("example" "src" "verbatim")))))
+   ((derived-mode-p 'markdown-mode 'gfm-mode)
+    (and (fboundp 'markdown-code-block-at-point-p)
+         (markdown-code-block-at-point-p)))
+   (t nil)))
 
 (provide 'ratex-math-detect)
 
