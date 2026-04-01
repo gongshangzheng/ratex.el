@@ -9,6 +9,14 @@
 (require 'ratex-render)
 (require 'ratex-math-detect)
 
+(ert-deftest ratex-download-command-calls-download-function ()
+  (let (called)
+    (cl-letf (((symbol-function 'ratex-download-backend)
+               (lambda ()
+                 (setq called t))))
+      (ratex-download-backend-command)
+      (should called))))
+
 (ert-deftest ratex-detects-dollar-math ()
   (with-temp-buffer
     (insert "hello $x^2$ world")
@@ -64,37 +72,39 @@
                (lambda (_pos) t)))
       (should-not (ratex-fragment-at-point)))))
 
-(ert-deftest ratex-backend-source-newer-detects-changes ()
-  (let* ((root (make-temp-file "ratex-test" t))
-         (backend-dir (expand-file-name "backend/src" root))
-         (binary-dir (expand-file-name "backend/target/debug" root))
-         (cargo-file (expand-file-name "backend/Cargo.toml" root))
-         (source-file (expand-file-name "backend/src/main.rs" root))
-         (lock-file (expand-file-name "backend/Cargo.lock" root))
-         (binary-file (expand-file-name "backend/target/debug/ratex-editor-backend" root)))
-    (make-directory backend-dir t)
-    (make-directory binary-dir t)
-    (dolist (file (list cargo-file source-file lock-file binary-file))
-      (write-region "" nil file nil 'silent))
-    (let ((old-time (seconds-to-time 1000))
-          (new-time (seconds-to-time 2000)))
-      (set-file-times binary-file old-time)
-      (set-file-times cargo-file old-time)
-      (set-file-times lock-file old-time)
-      (set-file-times source-file new-time)
-      (let ((default-directory root))
-        (should (ratex--backend-source-newer-p binary-file))))))
-
 (ert-deftest ratex-project-root-follows-library-location ()
   (let ((default-directory "/tmp/"))
-    (let ((root (directory-file-name (ratex--project-root))))
+    (let ((root (directory-file-name (ratex-root))))
       (should (file-directory-p root))
       (should (file-exists-p (expand-file-name "backend/Cargo.toml" root)))
       (should (file-directory-p (expand-file-name "lisp" root))))))
 
 (ert-deftest ratex-backend-root-override-wins ()
   (let ((ratex-backend-root "/tmp/ratex-root/"))
-    (should (equal (ratex-root) "/tmp/ratex-root/"))))
+    (should (equal (ratex-root)
+                   (file-name-as-directory
+                    (expand-file-name "/tmp/ratex-root/"))))))
+
+(ert-deftest ratex-backend-download-url-uses-latest-release ()
+  (let ((ratex-backend-release-repo "example/ratex.el")
+        (system-type 'gnu/linux))
+    (should
+     (equal (ratex--backend-download-url)
+            "https://github.com/example/ratex.el/releases/latest/download/ratex-editor-backend-linux")))
+  (let ((ratex-backend-release-repo "example/ratex.el")
+        (system-type 'windows-nt))
+    (should
+     (equal (ratex--backend-download-url)
+            "https://github.com/example/ratex.el/releases/latest/download/ratex-editor-backend-windows.exe"))))
+
+(ert-deftest ratex-backend-binary-path-defaults-to-project-target-directory ()
+  (let* ((root (make-temp-file "ratex-root" t))
+         (ratex-backend-root root)
+         (ratex-backend-binary (concat "backend/target/ratex-editor-backend"
+                                       (if (eq system-type 'windows-nt) ".exe" ""))))
+    (should
+     (equal (ratex--backend-binary-path)
+            (expand-file-name ratex-backend-binary root)))))
 
 (ert-deftest ratex-json-response-uses-symbol-keys ()
   (let* ((json-object-type 'alist)
@@ -238,7 +248,7 @@
                  (lambda (fragment)
                    (push (plist-get fragment :content) ensured))))
         (ratex-handle-post-command)
-        (should-not removed)
+        (should (equal removed '("3:7:yx")))
         (should-not ensured)))))
 
 (ert-deftest ratex-dispatches-responses-in-origin-buffer ()

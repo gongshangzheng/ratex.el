@@ -85,17 +85,16 @@ M-x ratex-mode
 `ratex-mode` 启动时会检查后端二进制是否存在：
 
 ```text
-backend/target/debug/ratex-editor-backend
+backend/target/ratex-editor-backend
 ```
 
-如果二进制不存在，或者 `backend/` 下的源码比它更新，Emacs 会自动执行：
+如果二进制不存在，Emacs 会自动从最新的 GitHub Release 下载对应平台的可执行文件：
 
 ```bash
-cargo build --manifest-path backend/Cargo.toml
+https://github.com/gongshangzheng/ratex.el/releases/latest
 ```
 
-编译成功后，会直接启动编译好的 backend。也就是说，正常情况下你在 `git pull`
-之后重新打开 Emacs 并启用 `ratex-mode`，如果后端需要重新编译，它会自动完成。
+下载成功后，会直接启动 backend。
 
 ## 如何使用
 
@@ -126,10 +125,10 @@ cargo build --manifest-path backend/Cargo.toml
 M-x ratex-refresh-previews
 ```
 
-如果你想手动重新编译 backend：
+如果你想手动重新下载 backend：
 
 ```elisp
-M-x ratex-build-backend-command
+M-x ratex-download-backend-command
 ```
 
 ## 使用示例
@@ -159,8 +158,7 @@ $\frac{1}{2}$
 - `ratex-svg-padding`：发送给 backend 的 SVG 边距
 - `ratex-render-color`：公式默认渲染颜色（例如 `#e6e6e6`、`red`、`[RGB]178,34,34`）
 - `ratex-edit-preview-posframe`：编辑时用 posframe 显示预览并自动更新
-- `ratex-auto-build-backend`：是否自动编译 backend
-- `ratex-backend-build-command`：backend 编译命令
+- `ratex-auto-download-backend`：是否自动下载 backend
 - `ratex-backend-binary`：backend 二进制路径
 
 例如：
@@ -178,14 +176,6 @@ $\frac{1}{2}$
 
 ```elisp
 M-x ratex-diagnose-backend-command
-```
-
-## 手动启动后端
-
-如果你在做本地开发，也可以手动运行 backend：
-
-```bash
-bin/dev-start-backend.sh
 ```
 
 ## 当前状态
