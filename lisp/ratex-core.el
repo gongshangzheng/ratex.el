@@ -43,7 +43,7 @@ Set this when auto-detection cannot reliably find the backend location."
   "When non-nil, download the backend automatically if needed before startup."
   :type 'boolean)
 
-(defcustom ratex-backend-release-repo "ISouthRain/ratex.el"
+(defcustom ratex-backend-release-repo "gongshangzheng/ratex.el"
   "GitHub repository that hosts backend release binaries."
   :type 'string)
 
