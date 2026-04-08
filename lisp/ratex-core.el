@@ -304,7 +304,8 @@ instead of downloading a pre-built binary."
 
 (defun ratex--launch-backend ()
   "Launch the backend binary."
-  (let ((binary (ratex--backend-binary-path)))
+  (let ((binary (ratex--backend-binary-path))
+        (default-directory (ratex-root)))
     (unless (file-exists-p binary)
       (error "RaTeX backend binary does not exist: %s" binary))
     (ratex--validate-backend-file binary)
