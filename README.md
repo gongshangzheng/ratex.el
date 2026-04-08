@@ -124,7 +124,13 @@ Supported delimiters in the current prototype:
 
 This package currently does not support dollar-delimited math. Use
 `\(...\)` and `\[...\]` instead; they are simpler and less error-prone in this
-codebase.
+codebase. To convert existing dollar-delimited formulas, run:
+
+```elisp
+M-x ratex-convert-delimiters
+```
+
+This replaces `$$...$$` with `\[...\]` and `$...$` with `\(...\)`.
 
 These cases are skipped by default and will not be rendered:
 
