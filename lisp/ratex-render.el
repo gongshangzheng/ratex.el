@@ -12,6 +12,7 @@
 (defvar ratex-mode)
 (defvar ratex-render-color)
 (defvar ratex-edit-preview)
+(defvar ratex-font-dir)
 (defvar ratex-posframe-background-color)
 (defvar ratex-posframe-border-color)
 (defvar ratex-posframe-poshandler)
@@ -225,6 +226,18 @@ currently under point."
       (unless (gethash key keep)
         (ratex-remove-overlay key)))))
 
+(defun ratex--render-payload (fragment)
+  "Build the render request payload for FRAGMENT."
+  (let ((payload `((type . "render")
+                   (latex . ,(string-trim (plist-get fragment :content)))
+                   (font_size . ,ratex-font-size)
+                   (padding . ,ratex-svg-padding)
+                   (color . ,(ratex--normalized-render-color))
+                   (embed_glyphs . t))))
+    (when ratex-font-dir
+      (nconc payload `((font_dir . ,(expand-file-name ratex-font-dir)))))
+    payload))
+
 (defun ratex--ensure-fragment-preview (fragment)
   "Ensure FRAGMENT preview is displayed or requested."
   (let* ((fragment-key (ratex--fragment-key fragment))
@@ -242,12 +255,7 @@ currently under point."
       (ratex--enqueue-waiter cache-key fragment-key fragment)
       (puthash cache-key t (ratex--inflight-table))
       (ratex-request
-       `((type . "render")
-         (latex . ,(string-trim (plist-get fragment :content)))
-         (font_size . ,ratex-font-size)
-         (padding . ,ratex-svg-padding)
-         (color . ,(ratex--normalized-render-color))
-         (embed_glyphs . t))
+       (ratex--render-payload fragment)
        (lambda (response)
          (remhash cache-key (ratex--inflight-table))
          (let ((waiters (gethash cache-key (ratex--inflight-waiters-table))))

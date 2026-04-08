@@ -47,6 +47,14 @@ Set this when auto-detection cannot reliably find the backend location."
   "GitHub repository that hosts backend release binaries."
   :type 'string)
 
+(defcustom ratex-font-dir nil
+  "Directory containing KaTeX .ttf font files.
+
+When nil, the backend searches relative to its working directory.
+Set this explicitly if the backend cannot locate fonts automatically."
+  :type '(choice (const :tag "Auto detect" nil)
+                 directory))
+
 (defcustom ratex-font-size 16.0
   "Default backend SVG font size."
   :type 'number)
@@ -141,7 +149,7 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
     (ratex--download-backend-async)
     nil)
    (t
-    (ratex--warn "RaTeX backend binary is missing. Run `M-x ratex-download-backend-command`.")
+    (ratex--warn "RaTeX backend binary is missing. Run `M-x ratex-download-backend`.")
     nil)))
 
 (defun ratex-stop-backend ()

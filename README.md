@@ -58,6 +58,14 @@ Add this repository to your `load-path`, then load `ratex`:
 (require 'ratex)
 ```
 
+Or with `use-package` (recommended for straight.el users):
+
+```elisp
+(use-package ratex
+  :config
+  (ratex-setup))
+```
+
 Enable it manually in the current buffer:
 
 ```elisp
@@ -85,7 +93,7 @@ Equivalent explicit hook setup:
 When `ratex-mode` starts, it checks whether the backend binary exists at:
 
 ```text
-backend/target/ratex-editor-backend
+backend/target/release/ratex-editor-backend
 ```
 
 If the binary is missing, `ratex.el` automatically downloads the matching asset
@@ -133,7 +141,7 @@ M-x ratex-refresh-previews
 If needed, you can reinstall the backend manually with:
 
 ```elisp
-M-x ratex-download-backend-command
+M-x ratex-download-backend
 ```
 
 ## Example
@@ -161,6 +169,7 @@ Useful variables:
 
 - `ratex-backend-root`: explicit repository root for backend discovery
 - `ratex-backend-release-repo`: GitHub repository that hosts backend releases
+- `ratex-font-dir`: directory containing KaTeX `.ttf` font files (defaults to `vendor/ratex-core/fonts` inside the repo)
 - `ratex-font-size`: SVG font size sent to the backend
 - `ratex-svg-padding`: SVG padding sent to the backend
 - `ratex-render-color`: default formula color (for example `#e6e6e6`, `red`, `[RGB]178,34,34`)
@@ -168,21 +177,38 @@ Useful variables:
 - `ratex-auto-download-backend`: whether to download automatically
 - `ratex-backend-binary`: backend binary path
 
-Example:
+### Edit Preview
+
+When `ratex-edit-preview` is set, a live preview is shown while editing a formula:
+
+- `nil` — no preview while editing (default)
+- `posframe` — floating popup near point; may occlude nearby text
+- `minibuffer` — preview in the minibuffer; lightweight and does not obstruct the buffer
+
+### Example Configuration
 
 ```elisp
-(setq ratex-backend-root "/path/to/ratex.el/")
-(setq ratex-font-size 18.0)
-(setq ratex-svg-padding 3.0)
-(setq ratex-render-color "#4b5563")
-(setq ratex-edit-preview 'posframe)
+(use-package ratex
+  :config
+  (setq ratex-backend-root "~/.emacs.d/straight/repos/ratex.el/")
+  (setq ratex-render-color "white")
+  (setq ratex-edit-preview 'minibuffer)
+  (setq ratex-posframe-background-color "black")
+  (ratex-setup))
+```
+
+If the backend cannot find KaTeX fonts (e.g. using a downloaded binary outside the
+repo), set `ratex-font-dir` to the directory containing the `.ttf` files:
+
+```elisp
+(setq ratex-font-dir "/path/to/ratex.el/vendor/ratex-core/fonts")
 ```
 
 If backend auto-discovery still fails in your setup, set `ratex-backend-root`
 explicitly. You can inspect the current detection result with:
 
 ```elisp
-M-x ratex-diagnose-backend-command
+M-x ratex-diagnose-backend
 ```
 
 ## Current Status

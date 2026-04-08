@@ -2,7 +2,7 @@
 
 [English](./README.md)
 
-`ratex.el` 是一个面向 Emacs 的行内数学公式预览原型，底层使用上游
+`ratex.el` 是一个面向 Emacs 的行内数学公式预览包，底层使用上游
 [RaTeX](https://github.com/erweixin/RaTeX) 引擎进行解析和 SVG 渲染。
 
 它的目标是在 Emacs 中提供一个轻量、异步、低打扰的数学公式预览体验。
@@ -15,7 +15,7 @@
 
 - 在 Emacs 中异步预览数学公式
 - 基于 RaTeX 的 SVG 渲染
-- 第一次使用时自动编译后端
+- 第一次使用时自动下载后端
 - 通过 overlay 显示公式预览
 - 支持 `latex-mode`、`LaTeX-mode`、`org-mode`、`markdown-mode`
 
@@ -31,7 +31,6 @@
 ## 环境要求
 
 - Emacs 29.1 或更新版本
-- 安装好的 Rust 工具链和 `cargo`
 - clone 时已初始化 submodule
 
 ## 安装方式
@@ -58,6 +57,14 @@ git submodule update --init --recursive
 (require 'ratex)
 ```
 
+或者使用 `use-package`（推荐 straight.el 用户）：
+
+```elisp
+(use-package ratex
+  :config
+  (ratex-setup))
+```
+
 当前 buffer 手动启用：
 
 ```elisp
@@ -80,12 +87,12 @@ M-x ratex-mode
 (add-hook 'markdown-mode-hook #'ratex-mode)
 ```
 
-## 自动编译机制
+## 自动下载机制
 
 `ratex-mode` 启动时会检查后端二进制是否存在：
 
 ```text
-backend/target/ratex-editor-backend
+backend/target/release/ratex-editor-backend
 ```
 
 如果二进制不存在，Emacs 会自动从最新的 GitHub Release 下载对应平台的可执行文件：
@@ -105,7 +112,7 @@ https://github.com/gongshangzheng/ratex.el/releases/latest
 - 光标停留在公式内部时，不会触发持续渲染
 - 光标离开该公式后，只会重渲染刚刚编辑的那一段
 
-也就是说，平时不会在每个命令后全量刷新，而是采用“打开时全量渲染 + 编辑时隐藏 + 离开后局部渲染”的模式。
+也就是说，平时不会在每个命令后全量刷新，而是采用"打开时全量渲染 + 编辑时隐藏 + 离开后局部渲染"的模式。
 
 当前原型支持的分隔符有：
 
@@ -129,7 +136,7 @@ M-x ratex-refresh-previews
 如果你想手动重新下载 backend：
 
 ```elisp
-M-x ratex-download-backend-command
+M-x ratex-download-backend
 ```
 
 ## 使用示例
@@ -155,28 +162,47 @@ M-x ratex-download-backend-command
 目前比较常用的自定义变量有：
 
 - `ratex-backend-root`：显式指定 ratex.el 仓库根目录
+- `ratex-backend-release-repo`：托管后端 Release 的 GitHub 仓库
+- `ratex-font-dir`：KaTeX `.ttf` 字体文件所在目录（默认为仓库内的 `vendor/ratex-core/fonts`）
 - `ratex-font-size`：发送给 backend 的 SVG 字号
 - `ratex-svg-padding`：发送给 backend 的 SVG 边距
 - `ratex-render-color`：公式默认渲染颜色（例如 `#e6e6e6`、`red`、`[RGB]178,34,34`）
-- `ratex-edit-preview-posframe`：编辑时用 posframe 显示预览并自动更新
+- `ratex-edit-preview`：编辑时的预览样式（`nil`、`posframe` 或 `minibuffer`）
 - `ratex-auto-download-backend`：是否自动下载 backend
 - `ratex-backend-binary`：backend 二进制路径
 
-例如：
+### 编辑预览
+
+`ratex-edit-preview` 开启后，编辑公式时会显示实时预览：
+
+- `nil` — 编辑时不显示预览（默认）
+- `posframe` — 在光标附近弹出浮动窗口；可能会遮挡附近内容
+- `minibuffer` — 在 minibuffer 中显示预览；轻量且不会遮挡 buffer 内容
+
+### 配置示例
 
 ```elisp
-(setq ratex-backend-root "/path/to/ratex.el/")
-(setq ratex-font-size 18.0)
-(setq ratex-svg-padding 3.0)
-(setq ratex-render-color "#4b5563")
-(setq ratex-edit-preview-posframe t)
+(use-package ratex
+  :config
+  (setq ratex-backend-root "~/.emacs.d/straight/repos/ratex.el/")
+  (setq ratex-render-color "white")
+  (setq ratex-edit-preview 'minibuffer)
+  (setq ratex-posframe-background-color "black")
+  (ratex-setup))
+```
+
+如果后端找不到 KaTeX 字体（例如使用下载的 Release 二进制不在仓库目录下），
+可以通过 `ratex-font-dir` 指定字体目录：
+
+```elisp
+(setq ratex-font-dir "/path/to/ratex.el/vendor/ratex-core/fonts")
 ```
 
 如果你的加载方式比较特殊，自动探测 backend 路径仍然失败，建议直接设置
 `ratex-backend-root`。你也可以执行下面的命令查看当前解析到的后端路径：
 
 ```elisp
-M-x ratex-diagnose-backend-command
+M-x ratex-diagnose-backend
 ```
 
 ## 当前状态
