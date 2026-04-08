@@ -114,7 +114,7 @@ Supported delimiters in the current prototype:
 - `\(...\)`
 - `\[...\]`
 
-Dollar-delimited math is now intentionally disabled in this package. Use
+This package currently does not support dollar-delimited math. Use
 `\(...\)` and `\[...\]` instead; they are simpler and less error-prone in this
 codebase.
 
