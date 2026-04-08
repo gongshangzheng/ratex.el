@@ -16,7 +16,7 @@ backend, SVG output, and minimal setup.
 
 - Async inline math preview inside Emacs
 - SVG rendering backed by RaTeX
-- Automatic backend build on first use
+- Automatic backend download on first use
 - Lightweight in-buffer rendering flow
 - Works with `latex-mode`, `LaTeX-mode`, `org-mode`, and `markdown-mode`
 
@@ -32,7 +32,6 @@ backend, SVG output, and minimal setup.
 ## Requirements
 
 - Emacs 29.1 or newer
-- Rust toolchain with `cargo`
 - A checkout with submodules initialized
 
 ## Installation
@@ -86,17 +85,17 @@ Equivalent explicit hook setup:
 When `ratex-mode` starts, it checks whether the backend binary exists at:
 
 ```text
-backend/target/debug/ratex-editor-backend
+backend/target/ratex-editor-backend
 ```
 
-If the binary is missing, or the backend sources are newer than the binary,
-`ratex.el` automatically runs:
+If the binary is missing, `ratex.el` automatically downloads the matching asset
+from the latest GitHub Release:
 
-```bash
-cargo build --manifest-path backend/Cargo.toml
+```text
+https://github.com/gongshangzheng/ratex.el/releases/latest
 ```
 
-After that, Emacs launches the compiled backend binary directly.
+After that, Emacs launches the downloaded backend binary directly.
 
 ## Usage
 
@@ -131,10 +130,10 @@ You can also trigger a full buffer refresh manually with:
 M-x ratex-refresh-previews
 ```
 
-If needed, you can rebuild the backend manually with:
+If needed, you can reinstall the backend manually with:
 
 ```elisp
-M-x ratex-build-backend-command
+M-x ratex-download-backend-command
 ```
 
 ## Example
@@ -161,12 +160,12 @@ through an overlay.
 Useful variables:
 
 - `ratex-backend-root`: explicit repository root for backend discovery
+- `ratex-backend-release-repo`: GitHub repository that hosts backend releases
 - `ratex-font-size`: SVG font size sent to the backend
 - `ratex-svg-padding`: SVG padding sent to the backend
 - `ratex-render-color`: default formula color (for example `#e6e6e6`, `red`, `[RGB]178,34,34`)
 - `ratex-edit-preview`: edit preview style (`nil`, `posframe`, or `minibuffer`)
-- `ratex-auto-build-backend`: whether to build automatically
-- `ratex-backend-build-command`: build command
+- `ratex-auto-download-backend`: whether to download automatically
 - `ratex-backend-binary`: backend binary path
 
 Example:
@@ -184,14 +183,6 @@ explicitly. You can inspect the current detection result with:
 
 ```elisp
 M-x ratex-diagnose-backend-command
-```
-
-## Manual Backend Development
-
-You can still start the backend yourself during development:
-
-```bash
-bin/dev-start-backend.sh
 ```
 
 ## Current Status

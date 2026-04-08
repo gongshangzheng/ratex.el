@@ -10,7 +10,6 @@
 ;; Minimal async inline math preview minor mode backed by RaTeX.
 
 ;;; Code:
-
 (require 'ratex-core)
 (require 'ratex-overlays)
 (require 'ratex-render)
@@ -32,17 +31,6 @@
     (ratex-clear-overlays)
     (ratex-reset-buffer-state)))
 
-;;;###autoload
-(defun ratex-build-backend-command ()
-  "Build the RaTeX backend."
-  (interactive)
-  (ratex-build-backend))
-
-;;;###autoload
-(defun ratex-diagnose-backend-command ()
-  "Display backend resolution information for ratex.el."
-  (interactive)
-  (ratex-diagnose-backend))
 
 ;;;###autoload
 ;;;###autoload
