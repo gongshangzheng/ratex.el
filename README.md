@@ -111,12 +111,12 @@ In other words, `ratex.el` avoids full refresh on every command and uses a
 
 Supported delimiters in the current prototype:
 
-- `$...$`
-- `$$...$$`
 - `\(...\)`
 - `\[...\]`
 
-We recommend `\(...\)` and `\[...\]`. `$$...$$` may cause rendering issues in some cases.
+`$...$` and `$$...$$` are now intentionally disabled in this package. Use
+`\(...\)` and `\[...\]` instead; they are simpler and less error-prone in this
+codebase.
 
 These cases are skipped by default and will not be rendered:
 

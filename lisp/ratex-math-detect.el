@@ -6,9 +6,7 @@
 
 (defconst ratex--delimiter-pairs
   '(("\\[" . "\\]")
-    ("\\(" . "\\)")
-    ("$$" . "$$")
-    ("$" . "$")))
+    ("\\(" . "\\)")))
 
 (defun ratex-fragments-in-buffer ()
   "Return all math fragments in the current buffer."
