@@ -18,13 +18,13 @@ jobs:
         include:
           - os: ubuntu-latest
             asset_name: ratex-editor-backend-linux
-            binary_path: backend/target/debug/ratex-editor-backend
+            binary_path: backend/target/release/ratex-editor-backend
           - os: macos-latest
             asset_name: ratex-editor-backend-macos
-            binary_path: backend/target/debug/ratex-editor-backend
+            binary_path: backend/target/release/ratex-editor-backend
           - os: windows-latest
             asset_name: ratex-editor-backend-windows.exe
-            binary_path: backend/target/debug/ratex-editor-backend.exe
+            binary_path: backend/target/release/ratex-editor-backend.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Build backend
-        run: cargo build --manifest-path backend/Cargo.toml
+        run: cargo build --release --manifest-path backend/Cargo.toml
 
       - name: Prepare asset
         shell: bash

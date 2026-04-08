@@ -114,7 +114,7 @@ Supported delimiters in the current prototype:
 - `\(...\)`
 - `\[...\]`
 
-`$...$` and `$$...$$` are now intentionally disabled in this package. Use
+This package currently does not support dollar-delimited math. Use
 `\(...\)` and `\[...\]` instead; they are simpler and less error-prone in this
 codebase.
 
@@ -141,7 +141,7 @@ M-x ratex-download-backend-command
 In a LaTeX, Org, or Markdown buffer, place point inside:
 
 ```tex
-$\frac{1}{2}$
+\(\frac{1}{2}\)
 ```
 
 or:

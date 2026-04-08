@@ -112,7 +112,7 @@ https://github.com/gongshangzheng/ratex.el/releases/latest
 - `\(...\)`
 - `\[...\]`
 
-本库现在已经明确禁止使用 `$...$` 和 `$$...$$` 表示数学公式。请统一使用
+本库目前不支持使用美元符号分隔的数学公式写法。请统一使用
 `\(...\)` 和 `\[...\]`，这两种形式在当前代码里更简单，也更不容易出错。
 
 默认会跳过这些情况，不做公式渲染：
@@ -137,7 +137,7 @@ M-x ratex-download-backend-command
 在 LaTeX、Org 或 Markdown buffer 里，把光标放在下面的公式内部：
 
 ```tex
-$\frac{1}{2}$
+\(\frac{1}{2}\)
 ```
 
 或者：
