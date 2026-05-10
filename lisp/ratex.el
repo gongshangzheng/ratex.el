@@ -46,6 +46,41 @@
   (dolist (hook '(latex-mode-hook LaTeX-mode-hook org-mode-hook markdown-mode-hook))
     (add-hook hook #'ratex-mode)))
 
+;;;###autoload
+(defun ratex-convert-delimiters ()
+  "Convert dollar math delimiters in the current buffer.
+$$...$$ becomes \\[...\\] and $...$ becomes \\(...\\).
+Escaped delimiters (\\$) are left unchanged."
+  (interactive)
+  (require 'ratex-math-detect)
+  (save-excursion
+    ;; First pass: $$...$$ → \[...\]
+    (let ((fragments (ratex--fragments-with-delimiters "$$" "$$")))
+      (dolist (f (sort fragments (lambda (a b) (> (plist-get a :begin) (plist-get b :begin)))))
+        (let ((beg (plist-get f :begin))
+              (end (plist-get f :end)))
+          ;; Replace closing $$ with \]
+          (delete-region (- end 2) end)
+          (goto-char (- end 2))
+          (insert "\\]")
+          ;; Replace opening $$ with \[
+          (delete-region beg (+ beg 2))
+          (goto-char beg)
+          (insert "\\["))))
+    ;; Second pass: $...$ → \(...\)
+    (let ((fragments (ratex--fragments-with-delimiters "$" "$")))
+      (dolist (f (sort fragments (lambda (a b) (> (plist-get a :begin) (plist-get b :begin)))))
+        (let ((beg (plist-get f :begin))
+              (end (plist-get f :end)))
+          ;; Replace closing $ with \)
+          (delete-region (- end 1) end)
+          (goto-char (- end 1))
+          (insert "\\)")
+          ;; Replace opening $ with \(
+          (delete-region beg (+ beg 1))
+          (goto-char beg)
+          (insert "\\("))))))
+
 (provide 'ratex)
 
 ;;; ratex.el ends here

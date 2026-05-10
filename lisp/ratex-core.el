@@ -196,8 +196,7 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
                      (funcall cb nil)))
                (goto-char (point-min))
                (re-search-forward "\r?\n\r?\n" nil t)
-               (let ((body-start (point)))
-                 (write-region body-start (point-max) temp-file nil 'silent))
+               (ratex--write-url-response-body temp-file)
                (ratex--validate-backend-file temp-file url)
                (rename-file temp-file binary t)
                (unless (eq system-type 'windows-nt)
@@ -388,6 +387,12 @@ instead of downloading a pre-built binary."
     (if (file-name-absolute-p binary)
         binary
       (expand-file-name binary (ratex-root)))))
+
+(defun ratex--write-url-response-body (path)
+  "Write the current `url-retrieve' response body to PATH as raw bytes."
+  (let ((body-start (point))
+        (coding-system-for-write 'no-conversion))
+    (write-region body-start (point-max) path nil 'silent)))
 
 (defun ratex--backend-download-url ()
   "Return the GitHub Release URL for the current platform backend."
