@@ -8,11 +8,16 @@
   '(("\\[" . "\\]")
     ("\\(" . "\\)")))
 
-(defun ratex-fragments-in-buffer ()
-  "Return all math fragments in the current buffer."
-  (let (all)
+(defun ratex-fragments-in-buffer (&optional beg end)
+  "Return all math fragments between BEG and END.
+
+When BEG and END are nil, scan the whole current buffer."
+  (let ((beg (or beg (point-min)))
+        (end (or end (point-max)))
+        all)
     (dolist (pair ratex--delimiter-pairs)
-      (setq all (nconc all (ratex--fragments-with-delimiters (car pair) (cdr pair)))))
+      (setq all (nconc all (ratex--fragments-with-delimiters
+                            (car pair) (cdr pair) beg end))))
     (ratex--select-non-overlapping-fragments all)))
 
 (defun ratex-fragment-at-point ()
@@ -61,21 +66,22 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
                 (goto-char (max (point-min) (1- begin))))))))
       fragment)))
 
-(defun ratex--fragments-with-delimiters (open close)
-  "Return all OPEN..CLOSE fragments in the current buffer."
+(defun ratex--fragments-with-delimiters (open close &optional beg end)
+  "Return all OPEN..CLOSE fragments between BEG and END."
   (save-excursion
-    (goto-char (point-min))
+    (goto-char (or beg (point-min)))
     (let ((open-len (length open))
           (close-len (length close))
+          (limit (copy-marker (or end (point-max))))
           fragments)
-      (while (search-forward open nil t)
+      (while (search-forward open limit t)
         (let ((begin (- (point) open-len)))
           (unless (or (ratex--escaped-at-p begin)
                       (ratex--code-context-at-p begin))
             (let ((content-begin (point))
                   found-end
                   content-end)
-              (while (and (not found-end) (search-forward close nil t))
+              (while (and (not found-end) (search-forward close limit t))
                 (let ((end-start (- (point) close-len)))
                   (unless (or (ratex--escaped-at-p end-start)
                               (ratex--code-context-at-p end-start))
@@ -88,6 +94,7 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
                             :open open
                             :close close)
                       fragments))))))
+      (set-marker limit nil)
       (nreverse fragments))))
 
 (defun ratex--select-non-overlapping-fragments (fragments)
@@ -100,12 +107,13 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
                        (ae (plist-get a :end))
                        (be (plist-get b :end)))
                    (if (= ab bb) (> ae be) (< ab bb))))))
-        accepted)
+        accepted
+        last-end)
     (dolist (fragment sorted)
-      (unless (cl-some (lambda (existing)
-                         (ratex--fragments-overlap-p existing fragment))
-                       accepted)
-        (push fragment accepted)))
+      (unless (and last-end (< (plist-get fragment :begin) last-end))
+        (push fragment accepted)
+        (setq last-end (max (or last-end (point-min))
+                            (plist-get fragment :end)))))
     (nreverse accepted)))
 
 (defun ratex--fragments-overlap-p (a b)
@@ -139,13 +147,23 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
   (cond
    ((derived-mode-p 'org-mode)
     (or (and (fboundp 'org-in-src-block-p)
-             (org-in-src-block-p t))
+             (org-in-src-block-p t)
+             (not (ratex--org-latex-src-block-p)))
         (and (fboundp 'org-in-block-p)
-             (org-in-block-p '("example" "src" "verbatim")))))
+             (org-in-block-p '("example" "verbatim")))))
    ((derived-mode-p 'markdown-mode 'gfm-mode)
     (and (fboundp 'markdown-code-block-at-point-p)
          (markdown-code-block-at-point-p)))
    (t nil)))
+
+(defun ratex--org-latex-src-block-p ()
+  "Return non-nil when point is inside an Org latex src block."
+  (and (fboundp 'org-element-at-point)
+       (let ((element (org-element-at-point)))
+         (and (eq (org-element-type element) 'src-block)
+              (let ((language (org-element-property :language element)))
+                (and language
+                     (string-equal (downcase language) "latex")))))))
 
 (provide 'ratex-math-detect)
 

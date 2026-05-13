@@ -87,6 +87,28 @@
                (lambda (_pos) t)))
       (should-not (ratex-fragment-at-point)))))
 
+(ert-deftest ratex-detects-org-latex-src-block-formulas ()
+  (with-temp-buffer
+    (org-mode)
+    (insert "#+begin_src latex\n\\(x\\)\n#+end_src\n")
+    (goto-char (point-min))
+    (search-forward "\\(x")
+    (let ((fragment (ratex-fragment-at-point)))
+      (should fragment)
+      (should (equal (plist-get fragment :content) "x")))
+    (let ((fragments (ratex-fragments-in-buffer)))
+      (should (= (length fragments) 1))
+      (should (equal (plist-get (car fragments) :content) "x")))))
+
+(ert-deftest ratex-skips-org-non-latex-src-block-formulas ()
+  (with-temp-buffer
+    (org-mode)
+    (insert "#+begin_src emacs-lisp\n\\(x\\)\n#+end_src\n")
+    (goto-char (point-min))
+    (search-forward "x")
+    (should-not (ratex-fragment-at-point))
+    (should-not (ratex-fragments-in-buffer))))
+
 (ert-deftest ratex-project-root-follows-library-location ()
   (let ((default-directory "/tmp/"))
     (let ((root (directory-file-name (ratex-root))))
@@ -149,6 +171,21 @@
       (should (equal (mapcar (lambda (f) (plist-get f :content)) fragments)
                      '("x" "y+1"))))))
 
+(ert-deftest ratex-fragments-in-buffer-honors-range ()
+  (with-temp-buffer
+    (insert "a \\(x\\) b \\(y\\) c")
+    (let ((fragments (ratex-fragments-in-buffer 9 (point-max))))
+      (should (= (length fragments) 1))
+      (should (equal (plist-get (car fragments) :content) "y")))))
+
+(ert-deftest ratex-select-non-overlapping-fragments-prefers-earlier-longer ()
+  (let* ((outer '(:begin 1 :end 10 :content "outer"))
+         (inner '(:begin 3 :end 5 :content "inner"))
+         (later '(:begin 12 :end 15 :content "later"))
+         (selected (ratex--select-non-overlapping-fragments
+                    (list inner later outer))))
+    (should (equal selected (list outer later)))))
+
 (ert-deftest ratex-fragments-to-render-excludes-active ()
   (with-temp-buffer
     (insert "a \\(x\\) b \\(y\\) c")
@@ -169,7 +206,11 @@
                  (lambda (fragment)
                    (push (plist-get fragment :content) rendered)))
                 ((symbol-function 'ratex--drop-stale-overlays)
-                 (lambda (_keys) nil)))
+                 (lambda (_keys) nil))
+                ((symbol-function 'ratex--visible-fragments)
+                 (lambda () (ratex-fragments-in-buffer)))
+                ((symbol-function 'ratex--schedule-full-refresh-scan)
+                 (lambda (_include-active _generation) nil)))
         (ratex-refresh-previews)
         (should (equal rendered '("y")))))))
 
@@ -182,9 +223,34 @@
                  (lambda (fragment)
                    (push (plist-get fragment :content) rendered)))
                 ((symbol-function 'ratex--drop-stale-overlays)
-                 (lambda (_keys) nil)))
+                 (lambda (_keys) nil))
+                ((symbol-function 'ratex--visible-fragments)
+                 (lambda () (ratex-fragments-in-buffer)))
+                ((symbol-function 'ratex--schedule-full-refresh-scan)
+                 (lambda (_include-active _generation) nil)))
         (ratex-refresh-previews t)
         (should (equal (sort rendered #'string<) '("x" "y")))))))
+
+(ert-deftest ratex-refresh-previews-renders-in-batches ()
+  (with-temp-buffer
+    (let ((ratex--refresh-batch-size 2)
+          rendered)
+      (insert "\\(a\\) \\(b\\) \\(c\\)")
+      (setq-local ratex-mode t)
+      (cl-letf (((symbol-function 'ratex--ensure-fragment-preview)
+                 (lambda (fragment)
+                   (push (plist-get fragment :content) rendered)))
+                ((symbol-function 'ratex--drop-stale-overlays)
+                 (lambda (_keys) nil))
+                ((symbol-function 'ratex--visible-fragments)
+                 (lambda () (ratex-fragments-in-buffer)))
+                ((symbol-function 'ratex--schedule-refresh-batch)
+                 (lambda (_generation) nil))
+                ((symbol-function 'ratex--schedule-full-refresh-scan)
+                 (lambda (_include-active _generation) nil)))
+        (ratex-refresh-previews t)
+        (should (equal (sort rendered #'string<) '("a" "b")))
+        (should (= (length ratex--refresh-queue) 1))))))
 
 (ert-deftest ratex-cache-key-includes-render-color ()
   (with-temp-buffer
@@ -193,6 +259,16 @@
            (ratex-render-color "#000000")
            (key-a (ratex--cache-key fragment))
            (ratex-render-color "#ffffff")
+           (key-b (ratex--cache-key fragment)))
+      (should-not (equal key-a key-b)))))
+
+(ert-deftest ratex-cache-key-includes-font-dir ()
+  (with-temp-buffer
+    (insert "\\(x\\)")
+    (let* ((fragment (car (ratex-fragments-in-buffer)))
+           (ratex-font-dir "/tmp/fonts-a")
+           (key-a (ratex--cache-key fragment))
+           (ratex-font-dir "/tmp/fonts-b")
            (key-b (ratex--cache-key fragment)))
       (should-not (equal key-a key-b)))))
 
@@ -263,7 +339,7 @@
                  (lambda (fragment)
                    (push (plist-get fragment :content) ensured))))
         (ratex-handle-post-command)
-        (should (equal removed '("3:7:yx")))
+        (should-not removed)
         (should-not ensured)))))
 
 (ert-deftest ratex-dispatches-responses-in-origin-buffer ()
@@ -304,6 +380,16 @@
     (goto-char 3)
     (let ((fragment (ratex-overlay-fragment-at-point)))
       (should (equal (plist-get fragment :content) "x")))))
+
+(ert-deftest ratex-overlay-at-point-ignores-stale-table-entry ()
+  (with-temp-buffer
+    (insert "abcdef")
+    (let ((overlay (make-overlay 2 5)))
+      (overlay-put overlay 'ratex-key "stale")
+      (puthash "stale" (make-overlay 1 2) (ratex--overlay-table))
+      (goto-char 3)
+      (should-not (ratex-rendered-overlay-at-point-p))
+      (delete-overlay overlay))))
 
 (ert-deftest ratex-post-command-expands-from-overlay-fallback ()
   (with-temp-buffer

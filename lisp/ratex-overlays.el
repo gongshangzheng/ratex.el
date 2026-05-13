@@ -53,19 +53,14 @@
 
 (defun ratex--overlay-entry-at-point ()
   "Return (KEY . OVERLAY) for a visible RaTeX overlay at point, or nil."
-  (let ((pos (point))
-        found)
-    (when (hash-table-p ratex--overlays)
-      (maphash
-       (lambda (key overlay)
-         (when (and (not found)
-                    (overlayp overlay)
-                    (overlay-buffer overlay)
-                    (<= (overlay-start overlay) pos)
-                    (< pos (overlay-end overlay)))
-           (setq found (cons key overlay))))
-       ratex--overlays))
-    found))
+  (let (found)
+    (dolist (overlay (overlays-at (point)) found)
+      (let ((key (overlay-get overlay 'ratex-key)))
+        (when (and key
+                   (not found)
+                   (hash-table-p ratex--overlays)
+                   (eq overlay (gethash key ratex--overlays)))
+          (setq found (cons key overlay)))))))
 
 (defun ratex-rendered-overlay-at-point-p ()
   "Return non-nil when point is inside a visible RaTeX rendered overlay."

@@ -26,8 +26,13 @@
 (defvar-local ratex--minibuffer-visible nil)
 (defvar-local ratex--minibuffer-fragment nil)
 (defvar-local ratex--preview-enabled nil)
+(defvar-local ratex--refresh-timer nil)
+(defvar-local ratex--refresh-scan-timer nil)
+(defvar-local ratex--refresh-queue nil)
+(defvar-local ratex--refresh-generation 0)
 (defconst ratex--posframe-buffer " *ratex-preview*")
 (defconst ratex--posframe-offset-y 5)
+(defconst ratex--refresh-batch-size 50)
 
 (defun ratex-reset-buffer-state ()
   "Reset buffer-local rendering state."
@@ -40,7 +45,10 @@
   (setq-local ratex--posframe-fragment nil)
   (setq-local ratex--minibuffer-visible nil)
   (setq-local ratex--minibuffer-fragment nil)
-  (setq-local ratex--preview-enabled nil))
+  (setq-local ratex--preview-enabled nil)
+  (ratex--cancel-refresh-timer)
+  (setq-local ratex--refresh-queue nil)
+  (setq-local ratex--refresh-generation 0))
 
 (defun ratex-refresh-previews (&optional include-active)
   "Refresh math previews in current buffer.
@@ -48,15 +56,15 @@
 When INCLUDE-ACTIVE is non-nil, render all formulas, including the one
 currently under point."
   (interactive)
-  (let* ((fragments (ratex-fragments-in-buffer))
+  (ratex--cancel-refresh-timer)
+  (cl-incf ratex--refresh-generation)
+  (let* ((fragments (ratex--visible-fragments))
          (active (ratex-fragment-at-point))
          (targets (if include-active
                       fragments
-                    (ratex--fragments-to-render fragments active)))
-         (target-keys (mapcar #'ratex--fragment-key targets)))
-    (ratex--drop-stale-overlays target-keys)
-    (dolist (fragment targets)
-      (ratex--ensure-fragment-preview fragment))))
+                    (ratex--fragments-to-render fragments active))))
+    (ratex--enqueue-refresh-targets targets)
+    (ratex--schedule-full-refresh-scan include-active ratex--refresh-generation)))
 
 (defun ratex-initialize-previews ()
   "Render all formulas once and initialize point tracking."
@@ -83,6 +91,81 @@ currently under point."
       (when (ratex--preview-enabled-p)
         (ratex--handle-preview-at-point current))
       (setq ratex--active-fragment current))))
+
+(defun ratex--visible-fragments ()
+  "Return fragments in the visible portion of the selected window."
+  (let* ((window (selected-window))
+         (beg (max (point-min) (window-start window)))
+         (end (min (point-max) (window-end window t))))
+    (ratex-fragments-in-buffer beg end)))
+
+(defun ratex--enqueue-refresh-targets (targets)
+  "Render TARGETS in bounded batches."
+  (let ((generation ratex--refresh-generation)
+        (first-batch (seq-take targets ratex--refresh-batch-size))
+        (rest (nthcdr ratex--refresh-batch-size targets)))
+    (setq ratex--refresh-queue rest)
+    (dolist (fragment first-batch)
+      (ratex--ensure-fragment-preview fragment))
+    (when ratex--refresh-queue
+      (ratex--schedule-refresh-batch generation))))
+
+(defun ratex--schedule-refresh-batch (generation)
+  "Schedule the next refresh batch for GENERATION."
+  (setq ratex--refresh-timer
+        (run-with-idle-timer
+         0.05 nil
+         (lambda (buffer)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (ratex--run-refresh-batch generation))))
+         (current-buffer))))
+
+(defun ratex--schedule-full-refresh-scan (include-active generation)
+  "Schedule a full-buffer scan for INCLUDE-ACTIVE and GENERATION."
+  (setq ratex--refresh-scan-timer
+        (run-with-idle-timer
+         0.2 nil
+         (lambda (buffer)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (ratex--run-full-refresh-scan include-active generation))))
+         (current-buffer))))
+
+(defun ratex--run-full-refresh-scan (include-active generation)
+  "Scan the whole buffer and enqueue remaining previews."
+  (setq ratex--refresh-scan-timer nil)
+  (when (and ratex-mode (= generation ratex--refresh-generation))
+    (let* ((fragments (ratex-fragments-in-buffer))
+           (active (ratex-fragment-at-point))
+           (targets (if include-active
+                        fragments
+                      (ratex--fragments-to-render fragments active)))
+           (target-keys (mapcar #'ratex--fragment-key targets)))
+      (ratex--drop-stale-overlays target-keys)
+      (ratex--enqueue-refresh-targets targets))))
+
+(defun ratex--run-refresh-batch (generation)
+  "Render one queued refresh batch for GENERATION."
+  (setq ratex--refresh-timer nil)
+  (when (and ratex-mode
+             (= generation ratex--refresh-generation)
+             ratex--refresh-queue)
+    (let ((batch (seq-take ratex--refresh-queue ratex--refresh-batch-size)))
+      (setq ratex--refresh-queue (nthcdr ratex--refresh-batch-size ratex--refresh-queue))
+      (dolist (fragment batch)
+        (ratex--ensure-fragment-preview fragment))
+      (when ratex--refresh-queue
+        (ratex--schedule-refresh-batch generation)))))
+
+(defun ratex--cancel-refresh-timer ()
+  "Cancel the current refresh timer, if any."
+  (when (timerp ratex--refresh-timer)
+    (cancel-timer ratex--refresh-timer))
+  (when (timerp ratex--refresh-scan-timer)
+    (cancel-timer ratex--refresh-scan-timer))
+  (setq ratex--refresh-timer nil)
+  (setq ratex--refresh-scan-timer nil))
 
 (defun ratex--handle-preview-at-point (fragment)
   "Show edit preview for FRAGMENT when enabled; otherwise hide it."
@@ -173,7 +256,8 @@ currently under point."
   (list (string-trim (plist-get fragment :content))
         ratex-font-size
         ratex-svg-padding
-        (ratex--normalized-render-color)))
+        (ratex--normalized-render-color)
+        (ratex--normalized-font-dir)))
 
 (defun ratex--normalized-render-color ()
   "Return a normalized render color string, or nil."
@@ -182,6 +266,11 @@ currently under point."
       (let ((trimmed (string-trim value)))
         (unless (string-empty-p trimmed)
           trimmed)))))
+
+(defun ratex--normalized-font-dir ()
+  "Return normalized font directory for cache keys, or nil."
+  (when ratex-font-dir
+    (expand-file-name ratex-font-dir)))
 
 (defun ratex--inflight-table ()
   "Return request-tracking table for current buffer."
