@@ -163,7 +163,7 @@ dependencies = [
 
 [[package]]
 name = "ratex-font"
-version = "0.0.12"
+version = "0.0.16"
 dependencies = [
  "phf",
  "ratex-types",
@@ -171,7 +171,7 @@ dependencies = [
 
 [[package]]
 name = "ratex-layout"
-version = "0.0.12"
+version = "0.0.16"
 dependencies = [
  "ratex-font",
  "ratex-parser",
@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "ratex-lexer"
-version = "0.0.12"
+version = "0.0.16"
 dependencies = [
  "ratex-types",
  "serde",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "ratex-parser"
-version = "0.0.12"
+version = "0.0.16"
 dependencies = [
  "fancy-regex",
  "ratex-font",
@@ -206,7 +206,7 @@ dependencies = [
 
 [[package]]
 name = "ratex-svg"
-version = "0.0.12"
+version = "0.0.16"
 dependencies = [
  "ab_glyph",
  "ratex-font",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "ratex-types"
-version = "0.0.12"
+version = "0.0.16"
 dependencies = [
  "serde",
 ]
