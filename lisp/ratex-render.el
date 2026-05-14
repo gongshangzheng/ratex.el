@@ -78,8 +78,7 @@ currently under point."
   "Update previews only when point enters/leaves math fragments."
   (when ratex-mode
     (when (ratex--preview-enabled-p)
-      (ratex--update-posframe-position)
-      (ratex--update-minibuffer-preview))
+      (ratex--update-posframe-position))
     (let ((current (ratex--active-fragment-at-point))
           (previous ratex--active-fragment))
       (unless (and previous current
@@ -207,6 +206,50 @@ currently under point."
        svg
        'svg t
        :ascent (floor (* 100.0 (/ baseline height)))))))
+
+(defun ratex--preview-image-from-response (response)
+  "Build a preview image from backend RESPONSE, including errors."
+  (if (ratex--response-ok-p response)
+      (ratex--image-from-response response)
+    (ratex--error-image (alist-get 'error response))))
+
+(defun ratex--response-ok-p (response)
+  "Return non-nil when backend RESPONSE is successful."
+  (eq (alist-get 'ok response) t))
+
+(defun ratex--escape-svg-text (text)
+  "Escape TEXT for use inside SVG character data."
+  (replace-regexp-in-string
+   "[&<>\"]"
+   (lambda (match)
+     (pcase match
+       ("&" "&amp;")
+       ("<" "&lt;")
+       (">" "&gt;")
+       ("\"" "&quot;")))
+   (or text "")
+   t t))
+
+(defun ratex--error-svg (error)
+  "Return an SVG image that displays ERROR."
+  (let* ((raw-text (or error "unknown error"))
+         (font-size 13)
+         (padding-x 8)
+         (padding-y 5)
+         (max-chars 96)
+         (shown (if (> (length raw-text) max-chars)
+                    (concat (substring raw-text 0 (- max-chars 3)) "...")
+                  raw-text))
+         (text (ratex--escape-svg-text shown))
+         (width (+ (* 8 (max 1 (length shown))) (* 2 padding-x)))
+         (height (+ font-size (* 2 padding-y))))
+    (format
+     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\"><rect width=\"100%%\" height=\"100%%\" fill=\"#fff59d\"/><text x=\"%d\" y=\"%d\" fill=\"#c00000\" font-family=\"monospace\" font-size=\"%d\">%s</text></svg>"
+     width height width height padding-x (+ padding-y font-size -2) font-size text)))
+
+(defun ratex--error-image (error)
+  "Build an image object that displays ERROR."
+  (create-image (ratex--error-svg error) 'svg t :ascent 80))
 
 (defun ratex--active-fragment-at-point ()
   "Return editable fragment at point, including rendered overlay fallback."
@@ -349,8 +392,8 @@ currently under point."
          (remhash cache-key (ratex--inflight-table))
          (let ((waiters (gethash cache-key (ratex--inflight-waiters-table))))
            (remhash cache-key (ratex--inflight-waiters-table))
-      (when (alist-get 'ok response)
-        (puthash cache-key response ratex--render-cache))
+           (when (ratex--response-ok-p response)
+             (puthash cache-key response ratex--render-cache))
            (when ratex-mode
              (dolist (entry waiters)
                (ratex--display-if-visible
@@ -368,7 +411,7 @@ currently under point."
       (if (ratex--preview-enabled-p)
           (progn
             (ratex-remove-overlay fragment-key)
-            (unless (ratex--display-posframe fragment response)
+            (unless (ratex--display-edit-preview fragment response)
               (ratex--ensure-fragment-preview fragment)))
         (ratex-remove-overlay fragment-key)))
      (t
@@ -376,10 +419,17 @@ currently under point."
 
 (defun ratex--display-response (fragment-key fragment response &optional style)
   "Display backend RESPONSE for FRAGMENT identified by FRAGMENT-KEY."
-  (if (not (alist-get 'ok response))
+  (if (not (ratex--response-ok-p response))
       (progn
         (setq ratex--last-error (alist-get 'error response))
-        (ratex-remove-overlay fragment-key)
+        (ratex-show-overlay
+         fragment-key
+         (plist-get fragment :begin)
+         (plist-get fragment :end)
+         (ratex--error-image ratex--last-error)
+         (format "RaTeX render failed: %s" ratex--last-error)
+         fragment
+         (or style 'inline))
         (when ratex--last-error
           (message "RaTeX render failed: %s" ratex--last-error)))
     (let ((image (ratex--image-from-response response)))
@@ -388,7 +438,7 @@ currently under point."
                (ratex--point-in-fragment-p fragment))
           (progn
             (ratex-remove-overlay fragment-key)
-            (ratex--display-posframe fragment response image))
+            (ratex--display-edit-preview fragment response image))
         (ratex-show-overlay
          fragment-key
          (plist-get fragment :begin)
@@ -397,6 +447,15 @@ currently under point."
          (format "RaTeX %s" (if (alist-get 'cached response) "cached" "rendered"))
          fragment
          (or style 'inline))))))
+
+(defun ratex--display-edit-preview (fragment &optional response image)
+  "Display RESPONSE or IMAGE using the active edit preview style for FRAGMENT."
+  (pcase (ratex--preview-style)
+    ('posframe
+     (ratex--display-posframe fragment response image))
+    ('minibuffer
+     (ratex--display-minibuffer fragment response image))
+    (_ nil)))
 
 
 
@@ -422,7 +481,7 @@ currently under point."
              (fboundp 'posframe-workable-p)
              (posframe-workable-p)
              (ratex--point-in-fragment-p fragment))
-    (let ((image (or image (and response (ratex--image-from-response response)))))
+    (let ((image (or image (and response (ratex--preview-image-from-response response)))))
       (when image
         (with-current-buffer (get-buffer-create ratex--posframe-buffer)
           (erase-buffer)
@@ -457,7 +516,7 @@ currently under point."
 (defun ratex--display-minibuffer (fragment &optional response image)
   "Display IMAGE (or RESPONSE) in the minibuffer for FRAGMENT."
   (when (ratex--point-in-fragment-p fragment)
-    (let ((image (or image (and response (ratex--image-from-response response)))))
+    (let ((image (or image (and response (ratex--preview-image-from-response response)))))
       (when image
         (message "%s" (propertize " " 'display image))
         (setq ratex--minibuffer-visible t)
