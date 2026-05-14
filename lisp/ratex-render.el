@@ -25,6 +25,7 @@
 (defvar-local ratex--posframe-fragment nil)
 (defvar-local ratex--minibuffer-visible nil)
 (defvar-local ratex--minibuffer-fragment nil)
+(defvar-local ratex--minibuffer-image nil)
 (defvar-local ratex--preview-enabled nil)
 (defvar-local ratex--refresh-timer nil)
 (defvar-local ratex--refresh-scan-timer nil)
@@ -45,6 +46,7 @@
   (setq-local ratex--posframe-fragment nil)
   (setq-local ratex--minibuffer-visible nil)
   (setq-local ratex--minibuffer-fragment nil)
+  (setq-local ratex--minibuffer-image nil)
   (setq-local ratex--preview-enabled nil)
   (ratex--cancel-refresh-timer)
   (setq-local ratex--refresh-queue nil)
@@ -180,6 +182,7 @@ currently under point."
            (ratex--update-posframe-position))
           ('minibuffer
            (unless (ratex--display-minibuffer fragment cached image)
+             (ratex--redisplay-minibuffer-preview)
              (ratex--ensure-fragment-preview fragment)))
           (_
            (ratex--ensure-fragment-preview fragment))))
@@ -518,17 +521,30 @@ currently under point."
   (when (ratex--point-in-fragment-p fragment)
     (let ((image (or image (and response (ratex--preview-image-from-response response)))))
       (when image
-        (message "%s" (propertize " " 'display image))
-        (setq ratex--minibuffer-visible t)
-        (setq ratex--minibuffer-fragment fragment)
+        (ratex--replace-minibuffer-preview fragment image)
         t))))
+
+(defun ratex--replace-minibuffer-preview (fragment image)
+  "Replace the minibuffer preview for FRAGMENT with IMAGE."
+  (message "%s" (propertize " " 'display image))
+  (setq ratex--minibuffer-visible t)
+  (setq ratex--minibuffer-fragment fragment)
+  (setq ratex--minibuffer-image image)
+  t)
+
+(defun ratex--redisplay-minibuffer-preview ()
+  "Redisplay the last minibuffer preview image, if any."
+  (when (and ratex--minibuffer-visible ratex--minibuffer-image)
+    (message "%s" (propertize " " 'display ratex--minibuffer-image))
+    t))
 
 (defun ratex--hide-minibuffer ()
   "Hide minibuffer preview if visible."
   (when ratex--minibuffer-visible
     (message nil)
     (setq ratex--minibuffer-visible nil)
-    (setq ratex--minibuffer-fragment nil)))
+    (setq ratex--minibuffer-fragment nil)
+    (setq ratex--minibuffer-image nil)))
 
 (defun ratex--hide-edit-preview ()
   "Hide whichever edit preview is active."
