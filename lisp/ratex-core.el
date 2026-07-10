@@ -19,10 +19,6 @@
 
 (require 'url)
 
-(defgroup ratex nil
-  "Inline math rendering with RaTeX."
-  :group 'tex)
-
 (defcustom ratex-backend-binary
   (concat "backend/target/release/ratex-editor-backend"
           (if (eq system-type 'windows-nt) ".exe" ""))
@@ -46,88 +42,6 @@ Set this when auto-detection cannot reliably find the backend location."
 (defcustom ratex-backend-release-repo "gongshangzheng/ratex.el"
   "GitHub repository that hosts backend release binaries."
   :type 'string)
-
-(defcustom ratex-font-dir nil
-  "Directory containing KaTeX .ttf font files.
-
-When nil, the backend searches relative to its working directory.
-Set this explicitly if the backend cannot locate fonts automatically."
-  :type '(choice (const :tag "Auto detect" nil)
-                 directory))
-
-(defcustom ratex-font-size 16.0
-  "Default backend SVG font size."
-  :type 'number)
-
-(defcustom ratex-svg-padding 2.0
-  "Default SVG padding sent to the backend."
-  :type 'number)
-
-(defcustom ratex-edit-preview nil
-  "Preview style used while editing formulas.
-
-Set to nil to disable edit previews, `posframe' to show a floating preview,
-or `minibuffer' to show the preview in the minibuffer."
-  :type '(choice (const :tag "Disable" nil)
-                 (const :tag "Posframe" posframe)
-                 (const :tag "Minibuffer" minibuffer)))
-
-(defcustom ratex-render-color nil
-  "Override formula color sent to backend rendering.
-
-When nil, RaTeX chooses `ratex-dark-render-color' or
-`ratex-light-render-color' based on the current frame's
-`background-mode'."
-  :type '(choice (const :tag "Backend default" nil)
-                 string))
-
-(defcustom ratex-dark-render-color "white"
-  "Formula color used when the current frame uses a dark background."
-  :type '(choice (const :tag "Backend default" nil)
-                 string))
-
-(defcustom ratex-light-render-color "black"
-  "Formula color used when the current frame uses a light background."
-  :type '(choice (const :tag "Backend default" nil)
-                 string))
-
-(defcustom ratex-posframe-background-color nil
-  "Override background color for RaTeX posframe preview.
-
-When nil, RaTeX chooses `ratex-dark-posframe-background-color' or
-`ratex-light-posframe-background-color' based on the current frame's
-`background-mode'."
-  :type '(choice (const :tag "Theme aware default" nil)
-                 string))
-
-(defcustom ratex-dark-posframe-background-color "black"
-  "Posframe background color used when the current frame uses a dark background."
-  :type '(choice (const :tag "Theme default" nil)
-                 string))
-
-(defcustom ratex-light-posframe-background-color "white"
-  "Posframe background color used when the current frame uses a light background."
-  :type '(choice (const :tag "Theme default" nil)
-                 string))
-
-(defcustom ratex-posframe-border-color "gray70"
-  "Border color for RaTeX posframe preview."
-  :type 'string)
-
-(defcustom ratex-posframe-poshandler
-  'ratex-posframe-poshandler-point-bottom-left-corner-offset
-  "Poshandler function used to place the RaTeX posframe preview."
-  :type 'function)
-
-(defcustom ratex-theme-change-refresh-scope 'all
-  "How RaTeX refreshes previews after a theme change.
-
-When set to `all', refresh every live buffer with `ratex-mode' enabled.
-When set to `current', refresh only the buffer that was current when the
-theme change was triggered. When nil, do not refresh automatically."
-  :type '(choice (const :tag "Refresh all RaTeX buffers" all)
-                 (const :tag "Refresh current buffer only" current)
-                 (const :tag "Do not refresh automatically" nil)))
 
 (defvar ratex--process nil)
 (defvar ratex--process-buffer " *ratex-backend*")
