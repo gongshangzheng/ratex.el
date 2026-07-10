@@ -103,6 +103,18 @@
       (overlay-put overlay 'display image))))
   (overlay-put overlay 'ratex-render-style style))
 
+(defun ratex-update-overlay-scale ()
+  "Update the scale of all RaTeX overlays in the current buffer."
+  (let ((current-scale (if (bound-and-true-p text-scale-mode)
+                           (expt text-scale-mode-step text-scale-mode-amount)
+                         1.0)))
+    (dolist (ov (overlays-in (point-min) (point-max)))
+      (let ((img (overlay-get ov 'ratex-image)))
+        (when (and img (eq (car img) 'image))
+          (setf (image-property img :scale) current-scale))))))
+
+(add-hook 'text-scale-mode-hook #'ratex-update-overlay-scale)
+
 (provide 'ratex-overlays)
 
 ;;; ratex-overlays.el ends here
