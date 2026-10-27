@@ -50,7 +50,8 @@ of an unchanged formula cheap."
           (overlay-put existing 'ratex-fragment fragment)
           (overlay-put existing 'ratex-scale ratex--scale)
           (when help-echo
-            (overlay-put existing 'help-echo help-echo)))
+            (overlay-put existing 'help-echo help-echo))
+          existing)
       (when (overlayp existing)
         (delete-overlay existing))
       (setq overlay (make-overlay beg end))
@@ -62,7 +63,8 @@ of an unchanged formula cheap."
       (ratex--overlay-apply-style overlay style)
       (when help-echo
         (overlay-put overlay 'help-echo help-echo))
-      (puthash key overlay table))))
+      (puthash key overlay table)
+      overlay)))
 
 (defun ratex-overlay-keys ()
   "Return overlay keys currently shown in the current buffer."

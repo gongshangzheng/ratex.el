@@ -254,13 +254,18 @@ text do any work, so repeated commands stay free."
     (ratex-fragments-in-buffer (max (point-min) start) (min (point-max) end))))
 
 (defun ratex--fragment-rendered-p (fragment)
-  "Return non-nil when FRAGMENT is displayed with the current scale."
+  "Return non-nil when FRAGMENT is displayed with the current render options.
+
+The cache key covers font size, padding, colour and font directory, so a
+theme or colour change makes already rendered overlays stale even though
+the formula text is unchanged."
   (let* ((key (ratex--fragment-key fragment))
          (overlay (ratex-overlay-for-key key)))
     (and (overlayp overlay)
          (= (overlay-start overlay) (plist-get fragment :begin))
          (= (overlay-end overlay) (plist-get fragment :end))
-         (eq (overlay-get overlay 'ratex-scale) ratex--scale)
+         (equal (overlay-get overlay 'ratex-scale) ratex--scale)
+         (equal (overlay-get overlay 'ratex-cache-key) (ratex--cache-key fragment))
          (overlay-get overlay 'ratex-image))))
 
 (defun ratex--on-window-scroll (window _start)
@@ -746,13 +751,17 @@ preview surface, and removing the overlay."
          (end (plist-get fragment :end))
          (ok (ratex--response-ok-p response)))
     (if ok
-        (let ((image (ratex--image-for-response (ratex--cache-key fragment) response)))
+        (let* ((cache-key (ratex--cache-key fragment))
+               (image (ratex--image-for-response cache-key response)))
           (setq ratex--last-error nil)
           (when image
-            (ratex-show-overlay
-             key begin end image
-             (format "RaTeX %s" (if (alist-get 'cached response) "cached" "rendered"))
-             fragment 'inline)))
+            (let ((overlay (ratex-show-overlay
+                            key begin end image
+                            (format "RaTeX %s"
+                                    (if (alist-get 'cached response) "cached" "rendered"))
+                            fragment 'inline)))
+              (when (overlayp overlay)
+                (overlay-put overlay 'ratex-cache-key cache-key)))))
       (setq ratex--last-error (alist-get 'error response))
       (ratex--notify-error (format "render failed: %s" ratex--last-error))
       (ratex-show-overlay
