@@ -2,277 +2,154 @@
 
 [English](./README.md)
 
-`ratex.el` 是一个面向 Emacs 的行内数学公式预览包，底层使用上游
-[RaTeX](https://github.com/erweixin/RaTeX) 引擎进行解析和 SVG 渲染。
-
-它的目标是在 Emacs 中提供一个轻量、异步、低打扰的数学公式预览体验。
+在 Emacs 里内联预览 LaTeX 数学公式，渲染由上游
+[RaTeX](https://github.com/erweixin/RaTeX) 引擎完成。写下 `\(\frac{1}{2}\)`
+就能看到公式——不需要安装 TeX，也不需要编译整份文档。
 
 ## 演示
 
-![ratex.el 演示](./assets/demo.gif)
+![ratex.el demo](./assets/demo.gif)
 
 ## 功能特性
 
-- 在 Emacs 中异步预览数学公式
-- 基于 RaTeX 的 SVG 渲染
-- 第一次使用时自动下载后端
-- 通过 overlay 显示公式预览
-- 支持 `latex-mode`、`LaTeX-mode`、`org-mode`、`markdown-mode`
-
-## 仓库结构
-
-- `vendor/ratex-core`：上游 RaTeX git submodule
-- `backend/`：供 Emacs 调用的 Rust 后端进程
-- `lisp/`：Emacs Lisp 包源码
-- `bin/`：开发辅助脚本
-- `test/`：Emacs 侧测试
-- `docs/`：项目文档和规划
+- 在 `latex-mode`、`LaTeX-mode`、`org-mode`、`markdown-mode` 中内联预览
+- 渲染跟随窗口：只渲染屏幕上可见的公式，滚动时补齐新进入视野的部分，已经
+  渲染好的不会重复渲染
+- 光标所在的公式保持为可编辑源码；也可以选择在 posframe 或 minibuffer 里
+  实时预览
+- 渲染在小体积后台进程里异步进行，即使文档有上千个公式，输入和滚动也不卡
+- 首次使用时自动下载后端二进制
 
 ## 环境要求
 
 - Emacs 29.1 或更新版本
-- clone 时已初始化 submodule
+- 首次使用时需要联网，以下载后端二进制
 
 ## 安装方式
 
-推荐直接带 submodule 克隆：
-
-```bash
-git clone --recurse-submodules https://github.com/gongshangzheng/ratex.el.git
-cd ratex.el
-```
-
-如果你已经 clone 了仓库但没拉 submodule：
-
-```bash
-git submodule update --init --recursive
-```
-
-## Emacs 配置
-
-先把仓库中的 `lisp/` 加入 `load-path`，再加载 `ratex`：
+把 `lisp/` 加入 `load-path`，然后加载：
 
 ```elisp
 (add-to-list 'load-path "/path/to/ratex.el/lisp")
 (require 'ratex)
-```
-
-或者使用 `use-package`（推荐 straight.el 用户）：
-
-```elisp
-(use-package ratex
-  :config
-  (global-ratex-mode 1))
-```
-
-当前 buffer 手动启用：
-
-```elisp
-M-x ratex-mode
-```
-
-或者给常见模式自动启用：
-
-```elisp
-(require 'ratex)
 (global-ratex-mode 1)
 ```
 
-在 Org 文件里，也可以通过关键字做单文件控制：
-
-```org
-#+ratex: t
-```
-
-如果想对某个 Org 文件关闭它，可以写 `#+ratex: nil` 或 `#+ratex: off`。
-即使启用了 `global-ratex-mode`，这个文件级设置也会生效。
-
-如果你想自己写 hook，也可以这样：
+使用 `use-package`：
 
 ```elisp
-(add-hook 'latex-mode-hook #'ratex-mode)
-(add-hook 'LaTeX-mode-hook #'ratex-mode)
-(add-hook 'org-mode-hook #'ratex-mode)
-(add-hook 'markdown-mode-hook #'ratex-mode)
+(use-package ratex
+  :load-path "/path/to/ratex.el/lisp"
+  :config
+  (global-ratex-mode 1))
 ```
 
-## 自动下载机制
-
-`ratex-mode` 启动时会检查后端二进制是否存在：
-
-```text
-backend/target/release/ratex-editor-backend
-```
-
-如果二进制不存在，Emacs 会自动从最新的 GitHub Release 下载对应平台的可执行文件：
-
-```bash
-https://github.com/gongshangzheng/ratex.el/releases/latest
-```
-
-下载成功后，会直接启动 backend。
+只对当前 buffer 启用可以用 `M-x ratex-mode`。
 
 ## 如何使用
 
-当前交互逻辑是：
-
-- 打开并启用 `ratex-mode` 后，只渲染当前窗口里可见的公式
-- 滚动到新的区域时，新进入窗口的公式会自动渲染；已经渲染过的不会重做
-- 光标进入公式后，预览会隐藏
-- 光标停留在公式内部时，不会触发持续渲染
-- 光标离开该公式后，只会重渲染刚刚编辑的那一段
-- 需要把整份文档渲染好（例如导出或整篇浏览）时，手动运行 `M-x ratex-render-buffer`
-
-也就是说，平时不会在每个命令后全量刷新，而是“按可见区渲染 + 编辑时隐藏 + 离开后局部渲染”。
-
-当前原型支持的分隔符有：
-
-- `\(...\)`
-- `\[...\]`
-
-本库目前不支持使用美元符号分隔的数学公式写法。请统一使用
-`\(...\)` 和 `\[...\]`，这两种形式在当前代码里更简单，也更不容易出错。
-如果需要转换已有的美元符号公式，可以运行：
+默认情况下 `global-ratex-mode` 会在 LaTeX、Org、Markdown buffer 里开启预览。
+如果想自己控制：
 
 ```elisp
-M-x ratex-convert-delimiters
+(add-hook 'org-mode-hook #'ratex-mode)
+(add-hook 'markdown-mode-hook #'ratex-mode)
+(add-hook 'latex-mode-hook #'ratex-mode)
 ```
 
-它会将 `$$...$$` 替换为 `\[...\]`，将 `$...$` 替换为 `\(...\)`。
+Org 文件里可以用关键字覆盖全局设置：
 
-默认会跳过这些情况，不做公式渲染：
-
-- 公式位于代码块中（例如 Org src/example/verbatim block，Markdown fenced code block）
-- 分隔符被转义时（例如 `\$`、`\\(`、`\\[`）
-
-也可以手动触发当前 buffer 的全量预览刷新（只刷新可见区）：
-
-```elisp
-M-x ratex-refresh-previews
+```org
+#+ratex: t      # 强制开启
+#+ratex: nil    # 强制关闭
 ```
 
-要把整个 buffer 都渲染好，用分块的后台渲染（可随时取消）：
-
-```elisp
-M-x ratex-render-buffer        ; 分块渲染整个 buffer
-M-x ratex-cancel-render-buffer ; 取消
-```
-
-失败不会被静默吞掉：后端返回无法解析的内容、二进制缺失或升级后不可用、
-把 `ratex-edit-preview` 设成 `posframe` 但在当前 frame 上不可用时，都会给出
-可见的 warning / error，并在公式位置显示错误 overlay，而不是“什么都不发生”。
-
-对于**不产生可见输出**的命令（典型的是 `\label{eq:...}`），公式会在送后端之前
-把该命令剥掉再渲染（issue #25）。注意只清洗“渲染输入”：buffer 文本和
-`org-export` 导出的 LaTeX 完全不受影响。剥离规则在
-`ratex-render-strip-patterns` 里，默认只含 label；有可见输出的命令（后端支持
-`\tag`，以及需要文档上下文的 `\ref` / `\eqref`）**不会**被剥掉，仍然照常
-报渲染错误。
-
-如果你想手动重新下载 backend：
-
-```elisp
-M-x ratex-download-backend
-```
-
-## 使用示例
-
-在 LaTeX、Org 或 Markdown buffer 里，把光标放在下面的公式内部：
+公式使用 LaTeX 分隔符 `\(...\)` 或 `\[...\]`：
 
 ```tex
-\(\frac{1}{2}\)
-```
+欧拉恒等式 \(e^{i\pi} + 1 = 0\) 很有名。
 
-或者：
-
-```tex
 \[
-\int_0^1 x^2\,dx
+\int_0^1 x^2\,dx = \frac{1}{3}
 \]
 ```
 
-`ratex.el` 会把公式发送给 Rust backend，收到 SVG 后通过 overlay 在 buffer 中显示预览。
+不支持美元符号分隔符（`$...$`、`$$...$$`）。已有这类写法可以运行
+`M-x ratex-convert-delimiters` 批量转换。
+
+编辑时的行为：
+
+- 窗口内的公式会被渲染；滚动时只渲染新进入视口的部分，已渲染的直接复用
+- 光标所在的公式显示为源码（设置 `ratex-edit-preview` 后在 posframe 或
+  minibuffer 里显示实时预览），离开后重新渲染
+- 代码块里的公式（Org 的 `src` / `example` / `verbatim`、Markdown 围栏代码块）
+  以及被转义的分隔符（如 `\\(`）不会被渲染
+
+`\label{eq:...}` 没问题：它没有可见输出，预览会把它去掉再渲染，而 buffer
+文本、`org-export` 导出的 LaTeX 仍然保留 label。交叉引用（`\ref`、
+`\eqref`）仍然会显示渲染错误，因为单个公式没有文档上下文可以解析它们。
+
+## 命令一览
+
+| 命令 | 作用 |
+|---|---|
+| `M-x ratex-mode` | 在当前 buffer 开关预览 |
+| `M-x global-ratex-mode` | 在所有支持的 buffer 开关预览 |
+| `M-x ratex-refresh-previews` | 重新渲染可见区公式 |
+| `M-x ratex-render-buffer` | 在后台分块渲染整个 buffer |
+| `M-x ratex-cancel-render-buffer` | 取消上述后台渲染 |
+| `M-x ratex-convert-delimiters` | 把 `$...$` / `$$...$$` 转成 `\(...\)` / `\[...\]` |
+| `M-x ratex-download-backend` | 重新下载后端二进制 |
+| `M-x ratex-diagnose-backend` | 显示后端二进制的定位结果 |
 
 ## 可配置项
 
-目前比较常用的自定义变量有：
+颜色与主题：
 
-- `ratex-backend-root`：显式指定 ratex.el 仓库根目录
-- `ratex-backend-release-repo`：托管后端 Release 的 GitHub 仓库
-- `ratex-font-dir`：KaTeX `.ttf` 字体文件所在目录（默认为仓库内的 `vendor/ratex-core/fonts`）
-- `ratex-font-size`：发送给 backend 的 SVG 字号
-- `ratex-svg-padding`：发送给 backend 的 SVG 边距
-- `ratex-dark-render-color` / `ratex-light-render-color`：会根据当前 frame 的 `background-mode` 选择的默认公式颜色
-- `ratex-render-color`：公式渲染颜色覆盖；当它为 `nil` 时，会使用上面的深色/浅色默认值
-- `ratex-edit-preview`：编辑时的预览样式（`nil`、`posframe` 或 `minibuffer`）
-- `ratex-dark-posframe-background-color` / `ratex-light-posframe-background-color`：会根据当前 frame 的 `background-mode` 选择的 posframe 背景色
-- `ratex-posframe-background-color`：posframe 背景色覆盖；当它为 `nil` 时，会使用上面的深色/浅色默认值
-- `ratex-theme-change-refresh-scope`：切换主题后是刷新所有 `ratex-mode` buffer、只刷新当前 buffer，还是不自动刷新
-- `ratex-auto-download-backend`：是否自动下载 backend
-- `ratex-backend-binary`：backend 二进制路径
+- `ratex-dark-render-color` / `ratex-light-render-color`：按当前 frame 的
+  明暗自动选择公式颜色（默认 `"white"` / `"black"`）
+- `ratex-render-color`：直接指定颜色，忽略主题
+- `ratex-dark-posframe-background-color` /
+  `ratex-light-posframe-background-color` / `ratex-posframe-background-color`：
+  posframe 预览背景色，规则同上
+- `ratex-theme-change-refresh-scope`：`all`（默认）/ `current` / `nil`
 
-### 编辑预览
+编辑与渲染：
 
-`ratex-edit-preview` 开启后，编辑公式时会显示实时预览：
+- `ratex-edit-preview`：`nil`（默认，光标处保持源码）、`posframe` 或
+  `minibuffer`
+- `ratex-font-size`（默认 `16.0`）、`ratex-svg-padding`（默认 `2.0`）
+- `ratex-render-strip-patterns`：渲染前去掉的 LaTeX 命令（这些命令没有可见
+  输出），默认只含 `\label`
 
-- `nil` — 编辑时不显示预览（默认）
-- `posframe` — 在光标附近弹出浮动窗口；可能会遮挡附近内容
-- `minibuffer` — 在 minibuffer 中显示预览；轻量且不会遮挡 buffer 内容
-
-### 配置示例
+跟随主题、用 minibuffer 预览的配置示例：
 
 ```elisp
 (use-package ratex
   :config
-  (setq ratex-backend-root "~/.emacs.d/straight/repos/ratex.el/")
+  (setq ratex-edit-preview 'minibuffer)
   (setq ratex-dark-render-color "white")
   (setq ratex-light-render-color "black")
-  (setq ratex-edit-preview 'minibuffer)
-  (setq ratex-dark-posframe-background-color "black")
-  (setq ratex-light-posframe-background-color "white")
   (global-ratex-mode 1))
 ```
 
-如果你想无视当前主题、强制使用单一颜色，可以直接设置覆盖变量：
+## 疑难排查
 
-```elisp
-(setq ratex-render-color "white")
-(setq ratex-posframe-background-color "black")
-```
+- **公式不显示、有 warning**：多半是后端二进制缺失。`M-x ratex-diagnose-backend`
+  能看到定位结果，`M-x ratex-download-backend` 可以重新下载。
+- **公式里的字形不对／花掉**：没找到 KaTeX 字体，把 `ratex-font-dir` 指向
+  仓库附带的 `fonts` 目录。
+- **找不到后端位置**：显式设置 `ratex-backend-root` 为仓库路径。
 
-如果你想控制切换主题后的自动刷新行为，可以这样设置：
-
-```elisp
-(setq ratex-theme-change-refresh-scope 'all)     ; 默认值
-;; 或：
-;; (setq ratex-theme-change-refresh-scope 'current)
-;; (setq ratex-theme-change-refresh-scope nil)
-```
-
-如果后端找不到 KaTeX 字体（例如使用下载的 Release 二进制不在仓库目录下），
-可以通过 `ratex-font-dir` 指定字体目录：
-
-```elisp
-(setq ratex-font-dir "/path/to/ratex.el/vendor/ratex-core/fonts")
-```
-
-如果你的加载方式比较特殊，自动探测 backend 路径仍然失败，建议直接设置
-`ratex-backend-root`。你也可以执行下面的命令查看当前解析到的后端路径：
-
-```elisp
-M-x ratex-diagnose-backend
-```
+实现细节（后端二进制与 Release 机制、渲染调度、内部旋钮）见
+[`docs/internals.md`](./docs/internals.md)。
 
 ## 当前状态
 
-这还是一个早期原型。目前主链路已经可用，但仍然有不少可以继续打磨的地方：
-
-- 更懂模式语法的公式检测
-- 更稳健的过期响应处理
-- 更友好的错误提示
-- 面向 MELPA 等包管理器的打包
+可用但仍属早期项目。预览渲染、滚动性能和错误提示已经就位；尚未做的包括
+MELPA 之类的打包安装，以及更完整的公式识别覆盖。
 
 ## 许可证说明
 
-当前仓库包含我们自己的 `ratex.el` 集成代码，以及 `vendor/ratex-core`
-这个上游 submodule。上游部分保持其原有许可证和历史。
+本仓库包含 `ratex.el` 自身的集成代码，以及作为子模块引入的上游
+`vendor/ratex-core`，后者保留其上游许可证与提交历史。

@@ -2,11 +2,9 @@
 
 [简体中文](./README.zh-CN.md)
 
-`ratex.el` is an Emacs-focused inline math preview package built on top of the
-upstream [RaTeX](https://github.com/erweixin/RaTeX) engine.
-
-It is designed to render LaTeX math fragments inside Emacs with a small async
-backend, SVG output, and minimal setup.
+Inline LaTeX math preview for Emacs, powered by the upstream
+[RaTeX](https://github.com/erweixin/RaTeX) engine. You type `\(\frac{1}{2}\)`
+and see the formula — no TeX installation, no document compilation.
 
 ## Demo
 
@@ -14,281 +12,154 @@ backend, SVG output, and minimal setup.
 
 ## Features
 
-- Async inline math preview inside Emacs
-- SVG rendering backed by RaTeX
-- Automatic backend download on first use
-- Lightweight in-buffer rendering flow
-- Works with `latex-mode`, `LaTeX-mode`, `org-mode`, and `markdown-mode`
-
-## Repository Layout
-
-- `vendor/ratex-core`: upstream RaTeX git submodule
-- `backend/`: Rust backend process used by Emacs
-- `lisp/`: Emacs Lisp package files
-- `bin/`: helper scripts
-- `test/`: Emacs-side tests
-- `docs/`: project notes and plans
+- Inline previews in `latex-mode`, `LaTeX-mode`, `org-mode` and `markdown-mode`
+- Rendering follows the window: only what you can see is rendered, scrolling
+  fills in the rest, and formulas already on screen are never re-rendered
+- What you are editing stays editable source; optionally show a live preview of
+  it in a posframe or in the minibuffer
+- Rendering happens asynchronously in a small background process, so typing and
+  scrolling stay responsive even in documents with thousands of formulas
+- The backend binary is downloaded automatically on first use
 
 ## Requirements
 
 - Emacs 29.1 or newer
-- A checkout with submodules initialized
+- Network access on first use, to fetch the backend binary
 
 ## Installation
 
-Clone the repository with submodules:
-
-```bash
-git clone --recurse-submodules https://github.com/gongshangzheng/ratex.el.git
-cd ratex.el
-```
-
-If you already cloned it without submodules:
-
-```bash
-git submodule update --init --recursive
-```
-
-## Emacs Setup
-
-Add this repository to your `load-path`, then load `ratex`:
+Put `lisp/` on your `load-path` and require the package:
 
 ```elisp
 (add-to-list 'load-path "/path/to/ratex.el/lisp")
 (require 'ratex)
-```
-
-Or with `use-package` (recommended for straight.el users):
-
-```elisp
-(use-package ratex
-  :config
-  (global-ratex-mode 1))
-```
-
-Enable it manually in the current buffer:
-
-```elisp
-M-x ratex-mode
-```
-
-Or enable it automatically for common text/math modes:
-
-```elisp
-(require 'ratex)
 (global-ratex-mode 1)
 ```
 
-In Org files, you can also control RaTeX per file with a keyword:
-
-```org
-#+ratex: t
-```
-
-Use `#+ratex: nil` (or `off`) to disable it for a specific Org file, even when
-`global-ratex-mode` is enabled.
-
-Equivalent explicit hook setup:
+With `use-package`:
 
 ```elisp
-(add-hook 'latex-mode-hook #'ratex-mode)
-(add-hook 'LaTeX-mode-hook #'ratex-mode)
-(add-hook 'org-mode-hook #'ratex-mode)
-(add-hook 'markdown-mode-hook #'ratex-mode)
+(use-package ratex
+  :load-path "/path/to/ratex.el/lisp"
+  :config
+  (global-ratex-mode 1))
 ```
 
-## How It Works
-
-When `ratex-mode` starts, it checks whether the backend binary exists at:
-
-```text
-backend/target/release/ratex-editor-backend
-```
-
-If the binary is missing, `ratex.el` automatically downloads the matching asset
-from the latest GitHub Release:
-
-```text
-https://github.com/gongshangzheng/ratex.el/releases/latest
-```
-
-After that, Emacs launches the downloaded backend binary directly.
+Enable it in a single buffer with `M-x ratex-mode`.
 
 ## Usage
 
-The current interaction model is:
-
-- when `ratex-mode` is enabled, only the formulas visible in the current window are rendered
-- formulas that scroll into the window are rendered shortly after the scroll; already rendered ones are reused as-is
-- when point enters a math fragment, preview is hidden
-- while point stays inside that fragment, no continuous rendering is triggered
-- when point leaves that fragment, only that fragment is rendered again
-- `M-x ratex-render-buffer` renders the whole buffer in background chunks (cancellable)
-
-In other words, `ratex.el` avoids full refresh on every command and uses a
-"render once on open + hide while editing + rerender on leave" flow.
-
-Supported delimiters in the current prototype:
-
-- `\(...\)`
-- `\[...\]`
-
-This package currently does not support dollar-delimited math. Use
-`\(...\)` and `\[...\]` instead; they are simpler and less error-prone in this
-codebase. To convert existing dollar-delimited formulas, run:
+By default `global-ratex-mode` turns previews on for LaTeX, Org and Markdown
+buffers. If you prefer explicit control:
 
 ```elisp
-M-x ratex-convert-delimiters
+(add-hook 'org-mode-hook #'ratex-mode)
+(add-hook 'markdown-mode-hook #'ratex-mode)
+(add-hook 'latex-mode-hook #'ratex-mode)
 ```
 
-This replaces `$$...$$` with `\[...\]` and `$...$` with `\(...\)`.
+In Org files a keyword can override the global setting for that file:
 
-These cases are skipped by default and will not be rendered:
-
-- formulas inside code blocks (for example Org src/example/verbatim blocks and
-  Markdown fenced code blocks)
-- escaped delimiters (for example `\$`, `\\(`, `\\[`)
-
-You can also trigger a refresh manually (it re-renders the visible region):
-
-```elisp
-M-x ratex-refresh-previews
+```org
+#+ratex: t      # force on
+#+ratex: nil    # force off
 ```
 
-Rendering follows the window: formulas are rendered when they become visible,
-scrolling renders only what newly entered the window, and formulas that are
-already rendered are never rebuilt.  To render a whole buffer in the
-background (cancellable), use:
-
-```elisp
-M-x ratex-render-buffer
-M-x ratex-cancel-render-buffer
-```
-
-Failures are never silent: unparsable backend output, a missing or unusable
-backend binary, and a configured-but-unavailable `posframe` preview all produce
-a visible warning/error and an error overlay at the formula, instead of the mode
-appearing to do nothing.
-
-Formulas that carry commands with no visible output are rendered without those
-commands: `\label{eq:...}` is removed before the formula is sent to the backend
-(issue #25).  Only the rendering input is cleaned — the buffer text and the
-LaTeX produced by `org-export` are untouched.  The removal list lives in
-`ratex-render-strip-patterns` and defaults to labels only; commands with visible
-output (`\tag`, which the backend supports, and `\ref` / `\eqref`, which need
-document context) are intentionally not removed and still report a render
-error.
-
-If needed, you can reinstall the backend manually with:
-
-```elisp
-M-x ratex-download-backend
-```
-
-## Example
-
-In a LaTeX, Org, or Markdown buffer, place point inside:
+Write math with the LaTeX delimiters `\(...\)` or `\[...\]`:
 
 ```tex
-\(\frac{1}{2}\)
-```
+The identity \(e^{i\pi} + 1 = 0\) is famous.
 
-or:
-
-```tex
 \[
-\int_0^1 x^2\,dx
+\int_0^1 x^2\,dx = \frac{1}{3}
 \]
 ```
 
-`ratex.el` will ask the backend to render the fragment and show the SVG preview
-through an overlay.
+Dollar delimiters (`$...$`, `$$...$$`) are not supported. To convert formulas
+that already use them, run `M-x ratex-convert-delimiters`.
+
+What you can expect while editing:
+
+- formulas in the window are rendered; scrolling renders whatever scrolls into
+  view and reuses everything that is already rendered
+- the formula under point is shown as source while you edit it (with
+  `ratex-edit-preview` set, a live preview appears in a posframe or in the
+  minibuffer instead), and it is re-rendered once you leave it
+- formulas inside code blocks (Org `src` / `example` / `verbatim`, Markdown
+  fenced code) and escaped delimiters such as `\\(` are left untouched
+
+Labels are fine: `\label{eq:...}` has no visible output, so the formula is
+previewed without it while your buffer — and the LaTeX produced by
+`org-export` — keeps the label. References (`\ref`, `\eqref`) still show as
+render errors, because a single formula has no document context to resolve
+them.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `M-x ratex-mode` | Toggle previews in the current buffer |
+| `M-x global-ratex-mode` | Toggle previews in all supported buffers |
+| `M-x ratex-refresh-previews` | Re-render the visible formulas |
+| `M-x ratex-render-buffer` | Render the whole buffer in background chunks |
+| `M-x ratex-cancel-render-buffer` | Cancel that background run |
+| `M-x ratex-convert-delimiters` | Convert `$...$` / `$$...$$` to `\(...\)` / `\[...\]` |
+| `M-x ratex-download-backend` | Re-download the backend binary |
+| `M-x ratex-diagnose-backend` | Show how the backend binary was resolved |
 
 ## Customization
 
-Useful variables:
+Colours and theme behavior:
 
-- `ratex-backend-root`: explicit repository root for backend discovery
-- `ratex-backend-release-repo`: GitHub repository that hosts backend releases
-- `ratex-font-dir`: directory containing KaTeX `.ttf` font files (defaults to `vendor/ratex-core/fonts` inside the repo)
-- `ratex-font-size`: SVG font size sent to the backend
-- `ratex-svg-padding`: SVG padding sent to the backend
-- `ratex-dark-render-color` / `ratex-light-render-color`: theme-aware default formula colors selected from the current frame's `background-mode`
-- `ratex-render-color`: explicit formula color override; when nil, the dark/light defaults above are used
-- `ratex-edit-preview`: edit preview style (`nil`, `posframe`, or `minibuffer`)
-- `ratex-dark-posframe-background-color` / `ratex-light-posframe-background-color`: theme-aware posframe background colors selected from the current frame's `background-mode`
-- `ratex-posframe-background-color`: explicit posframe background override; when nil, the dark/light defaults above are used
-- `ratex-theme-change-refresh-scope`: whether a theme change refreshes all `ratex-mode` buffers, only the current buffer, or none
-- `ratex-render-cache-size`: how many rendered formulas are cached per buffer (LRU eviction)
-- `ratex-visible-render-chunk`: how many formulas are rendered per idle turn
-- `ratex-auto-download-backend`: whether to download automatically
-- `ratex-backend-binary`: backend binary path
+- `ratex-dark-render-color` / `ratex-light-render-color`: formula colour chosen
+  from the current frame's background mode (defaults: `"white"` / `"black"`)
+- `ratex-render-color`: explicit colour override, ignoring the theme
+- `ratex-dark-posframe-background-color` /
+  `ratex-light-posframe-background-color` / `ratex-posframe-background-color`:
+  the same idea for the posframe preview background
+- `ratex-theme-change-refresh-scope`: `all` (default), `current` or `nil`
 
-### Edit Preview
+Editing and rendering:
 
-When `ratex-edit-preview` is set, a live preview is shown while editing a formula:
+- `ratex-edit-preview`: `nil` (default, formula at point stays source),
+  `posframe`, or `minibuffer`
+- `ratex-font-size` (default `16.0`) and `ratex-svg-padding` (default `2.0`)
+- `ratex-render-strip-patterns`: LaTeX commands removed before rendering,
+  because they have no visible output; defaults to `\label` only
 
-- `nil` — no preview while editing (default)
-- `posframe` — floating popup near point; may occlude nearby text
-- `minibuffer` — preview in the minibuffer; lightweight and does not obstruct the buffer
-
-### Example Configuration
+A configuration that follows the theme and previews in the minibuffer:
 
 ```elisp
 (use-package ratex
   :config
-  (setq ratex-backend-root "~/.emacs.d/straight/repos/ratex.el/")
+  (setq ratex-edit-preview 'minibuffer)
   (setq ratex-dark-render-color "white")
   (setq ratex-light-render-color "black")
-  (setq ratex-edit-preview 'minibuffer)
-  (setq ratex-dark-posframe-background-color "black")
-  (setq ratex-light-posframe-background-color "white")
   (global-ratex-mode 1))
 ```
 
-If you want to force a single color regardless of the current theme, set the
-override variables directly:
+## Troubleshooting
 
-```elisp
-(setq ratex-render-color "white")
-(setq ratex-posframe-background-color "black")
-```
+- **Nothing renders and you see warnings** — the backend is probably missing.
+  `M-x ratex-diagnose-backend` shows what was found; `M-x ratex-download-backend`
+  fetches it again.
+- **Formulas look garbled or use wrong glyphs** — the KaTeX fonts were not
+  found. Point `ratex-font-dir` at the `fonts` directory that ships with the
+  repository.
+- **The backend cannot be located** — set `ratex-backend-root` to the checkout
+  explicitly.
 
-To control what happens after switching themes:
-
-```elisp
-(setq ratex-theme-change-refresh-scope 'all)     ; default
-;; or:
-;; (setq ratex-theme-change-refresh-scope 'current)
-;; (setq ratex-theme-change-refresh-scope nil)
-```
-
-If the backend cannot find KaTeX fonts (e.g. using a downloaded binary outside the
-repo), set `ratex-font-dir` to the directory containing the `.ttf` files:
-
-```elisp
-(setq ratex-font-dir "/path/to/ratex.el/vendor/ratex-core/fonts")
-```
-
-If backend auto-discovery still fails in your setup, set `ratex-backend-root`
-explicitly. You can inspect the current detection result with:
-
-```elisp
-M-x ratex-diagnose-backend
-```
+Implementation notes (backend binary, release assets, rendering schedule,
+internal knobs) live in [`docs/internals.md`](./docs/internals.md).
 
 ## Current Status
 
-This is an early prototype. The core rendering path is working, but the package
-still needs more polish in areas such as:
-
-- mode-aware math detection
-- better stale-response handling
-- richer user-facing error reporting
-- packaging for MELPA or other package managers
+An early but usable prototype. Preview rendering, scrolling performance and
+error reporting are in place; packaging for MELPA-style installation and
+broader math-detection coverage are not done yet.
 
 ## License
 
-This repository currently contains original `ratex.el` integration code plus the
-vendored upstream `vendor/ratex-core` submodule, which keeps its own upstream
-license and history.
+This repository contains original `ratex.el` integration code plus the vendored
+upstream `vendor/ratex-core` submodule, which keeps its own upstream license and
+history.
