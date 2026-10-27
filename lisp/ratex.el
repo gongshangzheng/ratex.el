@@ -96,7 +96,7 @@ return `disable' for values such as `nil' or `off'; otherwise return nil."
 ;;;###autoload
 (defun ratex-convert-delimiters ()
   "Convert dollar math delimiters in the current buffer.
-$$...$$ becomes \\[...\\] and $...$ becomes \\(...\\).
+$$...$$ becomes \\=\\[...\\=\\] and $...$ becomes \\(...\\).
 Escaped delimiters (\\$) are left unchanged."
   (interactive)
   (require 'ratex-math-detect)

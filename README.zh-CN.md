@@ -162,6 +162,13 @@ M-x ratex-cancel-render-buffer ; 取消
 把 `ratex-edit-preview` 设成 `posframe` 但在当前 frame 上不可用时，都会给出
 可见的 warning / error，并在公式位置显示错误 overlay，而不是“什么都不发生”。
 
+对于**不产生可见输出**的命令（典型的是 `\label{eq:...}`），公式会在送后端之前
+把该命令剥掉再渲染（issue #25）。注意只清洗“渲染输入”：buffer 文本和
+`org-export` 导出的 LaTeX 完全不受影响。剥离规则在
+`ratex-render-strip-patterns` 里，默认只含 label；有可见输出的命令（后端支持
+`\tag`，以及需要文档上下文的 `\ref` / `\eqref`）**不会**被剥掉，仍然照常
+报渲染错误。
+
 如果你想手动重新下载 backend：
 
 ```elisp

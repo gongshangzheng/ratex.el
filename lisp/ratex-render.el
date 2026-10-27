@@ -84,6 +84,20 @@ Least recently used entries are evicted beyond this bound."
 Larger values make each idle turn longer but drain a screen faster."
   :type 'natnum)
 
+(defcustom ratex-render-strip-patterns
+  '("\\\\label\\s-*{[^{}]*}")
+  "Regexps removed from a formula before it is rendered.
+
+Only commands that produce no visible output belong here, because removing
+them can never change what the formula looks like.  `\\label' is the
+default: the renderer has no document counter for it.  Do not add commands
+whose output is visible, such as `\\tag' (supported by the renderer) or
+`\\ref'/`\\eqref' (they need document context that a single formula does
+not have); dropping those would silently change the formula.
+
+Set this to nil to send formulas to the renderer verbatim."
+  :type '(repeat regexp))
+
 (defvar-local ratex--render-cache nil
   "Hash table mapping render cache keys to successful backend responses.")
 (defvar-local ratex--image-cache nil
@@ -544,8 +558,12 @@ does nothing."
           (plist-get fragment :content)))
 
 (defun ratex--cache-key (fragment)
-  "Return render cache key for FRAGMENT."
-  (list (string-trim (plist-get fragment :content))
+  "Return render cache key for FRAGMENT.
+
+The key follows the text the renderer receives (see
+`ratex--render-latex'), so editing only a stripped command reuses the
+existing rendering."
+  (list (ratex--render-latex fragment)
         ratex-font-size
         ratex-svg-padding
         (ratex--effective-render-color)
@@ -624,10 +642,20 @@ not changed since, the substring comparison is skipped."
              (string= (buffer-substring-no-properties begin end)
                       (concat open content close))))))
 
+(defun ratex--render-latex (fragment)
+  "Return the LaTeX text sent to the renderer for FRAGMENT.
+
+Commands listed in `ratex-render-strip-patterns' are removed; the fragment
+content itself is never modified, so buffer text and export stay intact."
+  (let ((latex (or (plist-get fragment :content) "")))
+    (dolist (pattern ratex-render-strip-patterns)
+      (setq latex (replace-regexp-in-string pattern "" latex)))
+    (string-trim latex)))
+
 (defun ratex--render-payload (fragment)
   "Build the render request payload for FRAGMENT."
   (let ((payload `((type . "render")
-                   (latex . ,(string-trim (plist-get fragment :content)))
+                   (latex . ,(ratex--render-latex fragment))
                    (font_size . ,ratex-font-size)
                    (padding . ,ratex-svg-padding)
                    (color . ,(ratex--effective-render-color))
@@ -684,6 +712,14 @@ not changed since, the substring comparison is skipped."
 
 (defun ratex--ensure-fragment-preview (fragment)
   "Ensure FRAGMENT preview is displayed or requested."
+  (let ((latex (ratex--render-latex fragment)))
+    (if (string-empty-p latex)
+        ;; Nothing left to render (for example a label-only fragment).
+        (ratex-remove-overlay (ratex--fragment-key fragment))
+      (ratex--ensure-fragment-render fragment))))
+
+(defun ratex--ensure-fragment-render (fragment)
+  "Display or request the rendering of FRAGMENT."
   (let* ((cache-key (ratex--cache-key fragment))
          (cached (gethash cache-key (ratex--render-cache-table)))
          (inflight (gethash cache-key (ratex--inflight-table))))

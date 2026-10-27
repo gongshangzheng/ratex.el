@@ -1146,6 +1146,103 @@
         (ratex-refresh-previews t)
         (should (= requests 2))))))
 
+(ert-deftest ratex-render-payload-strips-labels ()
+  (with-temp-buffer
+    (insert "a \\(x^2 \\label{eq:1}\\) b")
+    (let* ((fragment (car (ratex-fragments-in-buffer)))
+           (payload (ratex--render-payload fragment)))
+      (should (equal (alist-get 'latex payload) "x^2"))
+      (should (equal (plist-get fragment :content) "x^2 \\label{eq:1}"))
+      (should (equal (buffer-string) "a \\(x^2 \\label{eq:1}\\) b")))))
+
+(ert-deftest ratex-render-payload-strips-spaced-labels ()
+  (with-temp-buffer
+    (insert "\\(a \\label {eq:1} b\\)")
+    (let* ((fragment (car (ratex-fragments-in-buffer)))
+           (latex (alist-get 'latex (ratex--render-payload fragment))))
+      (should-not (string-match-p "label" latex))
+      (should (string-match-p "a" latex))
+      (should (string-match-p "b" latex)))))
+
+(ert-deftest ratex-render-payload-keeps-visible-commands ()
+  (dolist (spec '(("E=mc^2 \\tag{1}" "tag{1}")
+                  ("E=mc^2 \\nonumber" "nonumber")
+                  ("see \\ref{eq:1}" "ref{eq:1}")))
+    (with-temp-buffer
+      (insert (format "\\(%s\\)" (car spec)))
+      (let ((latex (alist-get 'latex
+                              (ratex--render-payload
+                               (car (ratex-fragments-in-buffer))))))
+        (should (string-match-p (regexp-quote (nth 1 spec)) latex))))))
+
+(ert-deftest ratex-render-payload-passes-through-when-stripping-disabled ()
+  (with-temp-buffer
+    (insert "\\(x^2 \\label{eq:1}\\)")
+    (let* ((fragment (car (ratex-fragments-in-buffer)))
+           (ratex-render-strip-patterns nil)
+           (latex (alist-get 'latex (ratex--render-payload fragment))))
+      (should (equal latex "x^2 \\label{eq:1}")))))
+
+(ert-deftest ratex-label-only-fragment-renders-nothing ()
+  (with-temp-buffer
+    (insert "\\[ \\label{eq:x} \\]")
+    (setq-local ratex-mode t)
+    (ratex-reset-buffer-state)
+    (let* ((fragment (car (ratex-fragments-in-buffer)))
+           (requests 0))
+      (cl-letf (((symbol-function 'ratex-request)
+                 (lambda (&rest _args) (cl-incf requests) 1)))
+        (ratex--ensure-fragment-preview fragment)
+        (should (= requests 0))
+        (should-not (ratex-overlay-for-key (ratex--fragment-key fragment)))
+        (should-not ratex--last-error)))))
+
+(ert-deftest ratex-label-edit-reuses-rendered-result ()
+  (with-temp-buffer
+    (insert "a \\(x^2 \\label{eq:a}\\) b")
+    (goto-char (point-max))
+    (setq-local ratex-mode t)
+    (ratex-reset-buffer-state)
+    (let ((requests 0)
+          (range (list (point-min) (point-max) (buffer-chars-modified-tick))))
+      (cl-letf (((symbol-function 'ratex-request)
+                 (lambda (_payload callback)
+                   (cl-incf requests)
+                   (funcall callback '((ok . t) (svg . "<svg/>")
+                                       (baseline . 1.0) (height . 2.0)
+                                       (cached . :false)))
+                   1))
+                ((symbol-function 'create-image)
+                 (lambda (data &rest _args) (list :image data)))
+                ((symbol-function 'ratex--window-range)
+                 (lambda (_window) range))
+                ((symbol-function 'ratex--visible-fragments)
+                 (lambda (&optional _window) (ratex-fragments-in-buffer)))
+                ((symbol-function 'run-with-idle-timer)
+                 (lambda (&rest _args) nil)))
+        (ratex-refresh-previews t)
+        (should (= requests 1))
+        ;; change only the label key
+        (goto-char (point-min))
+        (search-forward "eq:a")
+        (replace-match "eq:b")
+        (goto-char (point-max))          ; editing fragment is not rendered inline
+        (ratex-refresh-previews t)
+        (should (= requests 1))
+        (should (= 1 (length (ratex-overlay-keys))))))))
+
+(ert-deftest ratex-convert-delimiters-docstring-shows-delimiters ()
+  (let* ((raw (documentation 'ratex-convert-delimiters))
+         (literal (regexp-quote "\\[...\\]"))
+         ;; Newer Emacsen substitute once inside `documentation'; older ones
+         ;; return the raw string, which the help buffer substitutes later.
+         (shown (if (string-match-p literal raw)
+                    raw
+                  (substitute-command-keys raw))))
+    (should (stringp raw))
+    (should (string-match-p literal shown))
+    (should-not (string-match-p "M-x" shown))))
+
 (provide 'ratex-tests)
 
 ;;; ratex-tests.el ends here

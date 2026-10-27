@@ -170,6 +170,15 @@ backend binary, and a configured-but-unavailable `posframe` preview all produce
 a visible warning/error and an error overlay at the formula, instead of the mode
 appearing to do nothing.
 
+Formulas that carry commands with no visible output are rendered without those
+commands: `\label{eq:...}` is removed before the formula is sent to the backend
+(issue #25).  Only the rendering input is cleaned — the buffer text and the
+LaTeX produced by `org-export` are untouched.  The removal list lives in
+`ratex-render-strip-patterns` and defaults to labels only; commands with visible
+output (`\tag`, which the backend supports, and `\ref` / `\eqref`, which need
+document context) are intentionally not removed and still report a render
+error.
+
 If needed, you can reinstall the backend manually with:
 
 ```elisp
