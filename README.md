@@ -118,10 +118,12 @@ After that, Emacs launches the downloaded backend binary directly.
 
 The current interaction model is:
 
-- when `ratex-mode` is enabled, formulas in the current buffer are rendered once
+- when `ratex-mode` is enabled, only the formulas visible in the current window are rendered
+- formulas that scroll into the window are rendered shortly after the scroll; already rendered ones are reused as-is
 - when point enters a math fragment, preview is hidden
 - while point stays inside that fragment, no continuous rendering is triggered
 - when point leaves that fragment, only that fragment is rendered again
+- `M-x ratex-render-buffer` renders the whole buffer in background chunks (cancellable)
 
 In other words, `ratex.el` avoids full refresh on every command and uses a
 "render once on open + hide while editing + rerender on leave" flow.
@@ -147,11 +149,35 @@ These cases are skipped by default and will not be rendered:
   Markdown fenced code blocks)
 - escaped delimiters (for example `\$`, `\\(`, `\\[`)
 
-You can also trigger a full buffer refresh manually with:
+You can also trigger a refresh manually (it re-renders the visible region):
 
 ```elisp
 M-x ratex-refresh-previews
 ```
+
+Rendering follows the window: formulas are rendered when they become visible,
+scrolling renders only what newly entered the window, and formulas that are
+already rendered are never rebuilt.  To render a whole buffer in the
+background (cancellable), use:
+
+```elisp
+M-x ratex-render-buffer
+M-x ratex-cancel-render-buffer
+```
+
+Failures are never silent: unparsable backend output, a missing or unusable
+backend binary, and a configured-but-unavailable `posframe` preview all produce
+a visible warning/error and an error overlay at the formula, instead of the mode
+appearing to do nothing.
+
+Formulas that carry commands with no visible output are rendered without those
+commands: `\label{eq:...}` is removed before the formula is sent to the backend
+(issue #25).  Only the rendering input is cleaned — the buffer text and the
+LaTeX produced by `org-export` are untouched.  The removal list lives in
+`ratex-render-strip-patterns` and defaults to labels only; commands with visible
+output (`\tag`, which the backend supports, and `\ref` / `\eqref`, which need
+document context) are intentionally not removed and still report a render
+error.
 
 If needed, you can reinstall the backend manually with:
 
@@ -193,6 +219,8 @@ Useful variables:
 - `ratex-dark-posframe-background-color` / `ratex-light-posframe-background-color`: theme-aware posframe background colors selected from the current frame's `background-mode`
 - `ratex-posframe-background-color`: explicit posframe background override; when nil, the dark/light defaults above are used
 - `ratex-theme-change-refresh-scope`: whether a theme change refreshes all `ratex-mode` buffers, only the current buffer, or none
+- `ratex-render-cache-size`: how many rendered formulas are cached per buffer (LRU eviction)
+- `ratex-visible-render-chunk`: how many formulas are rendered per idle turn
 - `ratex-auto-download-backend`: whether to download automatically
 - `ratex-backend-binary`: backend binary path
 

@@ -63,10 +63,36 @@ Set this when auto-detection cannot reliably find the backend location."
   "Return non-nil when the backend process is alive."
   (and ratex--process (process-live-p ratex--process)))
 
+(defun ratex--backend-platform-supported-p ()
+  "Return non-nil when a backend binary exists for this platform."
+  (memq system-type '(gnu/linux darwin windows-nt)))
+
+(defun ratex--fail-pending-requests (reason)
+  "Fail every pending backend request with REASON.
+
+Requests must never be left pending: a stuck request makes the formula
+waiting for it unrenderable for the rest of the session."
+  (let ((pending ratex--pending)
+        (response (list (cons 'ok :false)
+                        (cons 'error (or reason "backend request failed")))))
+    (setq ratex--pending (make-hash-table :test #'eql))
+    (maphash (lambda (_id callback)
+               (condition-case err
+                   (funcall callback response)
+                 (error
+                  (display-warning
+                   'ratex
+                   (format "RaTeX: request failure handler errored: %s"
+                           (error-message-string err))
+                   :error))))
+             pending)))
+
 (defun ratex-start-backend (&optional callback)
   "Start the backend process if needed.
 
-When CALLBACK is non-nil, invoke it with the live process once startup succeeds."
+When CALLBACK is non-nil, invoke it with the live process once startup
+succeeds.  Startup failures fail every pending request instead of leaving
+it waiting forever."
   (cond
    ((ratex-backend-live-p)
     (when callback
@@ -76,6 +102,11 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
     (when callback
       (push callback ratex--startup-callbacks))
     nil)
+   ((not (ratex--backend-platform-supported-p))
+    (let ((reason (format "RaTeX backend is not available for %s" system-type)))
+      (ratex--warn reason)
+      (ratex--fail-pending-requests reason)
+      nil))
    ((ratex--backend-ready-p)
     (condition-case err
         (progn
@@ -90,10 +121,10 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
              (when callback
                (push callback ratex--startup-callbacks))
              (ratex--download-backend-async))
-         (ratex--warn
-          (format "RaTeX backend launch failed: %s"
-                  (error-message-string err)))
-         nil))))
+         (let ((reason (error-message-string err)))
+           (ratex--warn (format "RaTeX backend launch failed: %s" reason))
+           (ratex--fail-pending-requests reason)
+           nil)))))
    (ratex-auto-download-backend
     (when callback
       (push callback ratex--startup-callbacks))
@@ -101,6 +132,7 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
     nil)
    (t
     (ratex--warn "RaTeX backend binary is missing. Run `M-x ratex-download-backend`.")
+    (ratex--fail-pending-requests "RaTeX backend binary is missing")
     nil)))
 
 (defun ratex-stop-backend ()
@@ -139,12 +171,14 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
          (unwind-protect
              (if (or (not status)
                      (plist-get status :error))
-                 (let ((err (plist-get status :error)))
+                 (let* ((err (plist-get status :error))
+                        (reason (if err
+                                    (error-message-string err)
+                                  "unknown error")))
                    (ratex--warn
-                    (format "RaTeX backend download failed: %s"
-                            (if err (error-message-string err) "unknown error")))
-                   (dolist (cb callbacks)
-                     (funcall cb nil)))
+                    (format "RaTeX backend download failed: %s" reason))
+                   (ratex--fail-pending-requests
+                    (format "RaTeX backend download failed: %s" reason)))
                (goto-char (point-min))
                (re-search-forward "\r?\n\r?\n" nil t)
                (ratex--write-url-response-body temp-file)
@@ -153,9 +187,17 @@ When CALLBACK is non-nil, invoke it with the live process once startup succeeds.
                (unless (eq system-type 'windows-nt)
                  (set-file-modes binary #o755))
                (message "RaTeX backend downloaded to %s" binary)
-               (ratex--launch-backend)
+               (condition-case err
+                   (ratex--launch-backend)
+                 (error
+                  (let ((reason (error-message-string err)))
+                    (ratex--warn
+                     (format "RaTeX backend launch failed: %s" reason))
+                    (ratex--fail-pending-requests reason)
+                    (setq callbacks nil))))
                (dolist (cb callbacks)
-                 (funcall cb ratex--process)))
+                 (when (ratex-backend-live-p)
+                   (funcall cb ratex--process))))
            (when (file-exists-p temp-file)
              (delete-file temp-file)))))
      nil t)))
@@ -237,27 +279,33 @@ instead of downloading a pre-built binary."
         (ratex--dispatch-line line)))))
 
 (defun ratex--dispatch-line (line)
-  "Dispatch one backend output LINE."
+  "Dispatch one backend output LINE.
+
+Malformed output means the protocol is broken: report it and fail what is
+pending instead of dropping the response silently."
   (let* ((json-object-type 'alist)
          (json-key-type 'symbol)
          (json-array-type 'list)
          (json-false :false)
-         (data (ignore-errors (json-read-from-string line))))
-    (when data
-      (let* ((id (alist-get 'id data))
-             (callback (gethash id ratex--pending)))
-        (when callback
-          (remhash id ratex--pending)
-          (funcall callback data))))))
+         (parsed (condition-case err
+                     (cons 'ok (json-read-from-string line))
+                   (error (cons 'error err)))))
+    (if (eq (car parsed) 'ok)
+        (let* ((data (cdr parsed))
+               (id (alist-get 'id data))
+               (callback (gethash id ratex--pending)))
+          (when callback
+            (remhash id ratex--pending)
+            (funcall callback data)))
+      (let ((reason (format "malformed backend response: %s"
+                            (truncate-string-to-width line 120))))
+        (display-warning 'ratex (format "RaTeX %s" reason) :error)
+        (ratex--fail-pending-requests reason)))))
 
 (defun ratex--process-sentinel (proc event)
   "Handle backend PROC EVENT."
   (unless (process-live-p proc)
-    (maphash
-     (lambda (_id callback)
-       (funcall callback `((ok . :false) (error . ,(string-trim event)))))
-     ratex--pending)
-    (clrhash ratex--pending)
+    (ratex--fail-pending-requests (string-trim event))
     (setq ratex--process nil)))
 
 (defun ratex--launch-backend ()
@@ -383,7 +431,8 @@ instead of downloading a pre-built binary."
                        "\376\355\372\317"
                        "\376\355\372\316"
                        "\312\376\272\276")))
-            (t nil))))))
+            (t (error "Unsupported system type for RaTeX backend: %S"
+                      system-type)))))))
 
 (defun ratex--validate-backend-file (path &optional source-url)
   "Signal an error when PATH is not a valid backend executable.

@@ -23,12 +23,16 @@
       (progn
         (ratex-reset-buffer-state)
         (add-hook 'post-command-hook #'ratex-handle-post-command nil t)
-        (add-hook 'buffer-list-update-hook #'ratex-handle-buffer-switch)
+        (add-hook 'window-scroll-functions #'ratex--on-window-scroll nil t)
+        (add-hook 'window-buffer-change-functions
+                  #'ratex--handle-window-buffer-change nil t)
         (ratex-start-backend)
         (ratex-initialize-previews))
     (remove-hook 'post-command-hook #'ratex-handle-post-command t)
-    (remove-hook 'buffer-list-update-hook #'ratex-handle-buffer-switch)
-    (ratex-handle-buffer-switch)
+    (remove-hook 'window-scroll-functions #'ratex--on-window-scroll t)
+    (remove-hook 'window-buffer-change-functions
+                 #'ratex--handle-window-buffer-change t)
+    (ratex--hide-edit-preview)
     (ratex-clear-overlays)
     (ratex-reset-buffer-state)))
 
@@ -92,7 +96,7 @@ return `disable' for values such as `nil' or `off'; otherwise return nil."
 ;;;###autoload
 (defun ratex-convert-delimiters ()
   "Convert dollar math delimiters in the current buffer.
-$$...$$ becomes \\[...\\] and $...$ becomes \\(...\\).
+$$...$$ becomes \\=\\[...\\=\\] and $...$ becomes \\(...\\).
 Escaped delimiters (\\$) are left unchanged."
   (interactive)
   (require 'ratex-math-detect)

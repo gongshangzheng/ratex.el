@@ -116,12 +116,14 @@ https://github.com/gongshangzheng/ratex.el/releases/latest
 
 当前交互逻辑是：
 
-- 打开并启用 `ratex-mode` 后，会先全量渲染当前 buffer 里的公式
+- 打开并启用 `ratex-mode` 后，只渲染当前窗口里可见的公式
+- 滚动到新的区域时，新进入窗口的公式会自动渲染；已经渲染过的不会重做
 - 光标进入公式后，预览会隐藏
 - 光标停留在公式内部时，不会触发持续渲染
 - 光标离开该公式后，只会重渲染刚刚编辑的那一段
+- 需要把整份文档渲染好（例如导出或整篇浏览）时，手动运行 `M-x ratex-render-buffer`
 
-也就是说，平时不会在每个命令后全量刷新，而是采用"打开时全量渲染 + 编辑时隐藏 + 离开后局部渲染"的模式。
+也就是说，平时不会在每个命令后全量刷新，而是“按可见区渲染 + 编辑时隐藏 + 离开后局部渲染”。
 
 当前原型支持的分隔符有：
 
@@ -143,11 +145,29 @@ M-x ratex-convert-delimiters
 - 公式位于代码块中（例如 Org src/example/verbatim block，Markdown fenced code block）
 - 分隔符被转义时（例如 `\$`、`\\(`、`\\[`）
 
-也可以手动触发当前 buffer 的全量预览刷新：
+也可以手动触发当前 buffer 的全量预览刷新（只刷新可见区）：
 
 ```elisp
 M-x ratex-refresh-previews
 ```
+
+要把整个 buffer 都渲染好，用分块的后台渲染（可随时取消）：
+
+```elisp
+M-x ratex-render-buffer        ; 分块渲染整个 buffer
+M-x ratex-cancel-render-buffer ; 取消
+```
+
+失败不会被静默吞掉：后端返回无法解析的内容、二进制缺失或升级后不可用、
+把 `ratex-edit-preview` 设成 `posframe` 但在当前 frame 上不可用时，都会给出
+可见的 warning / error，并在公式位置显示错误 overlay，而不是“什么都不发生”。
+
+对于**不产生可见输出**的命令（典型的是 `\label{eq:...}`），公式会在送后端之前
+把该命令剥掉再渲染（issue #25）。注意只清洗“渲染输入”：buffer 文本和
+`org-export` 导出的 LaTeX 完全不受影响。剥离规则在
+`ratex-render-strip-patterns` 里，默认只含 label；有可见输出的命令（后端支持
+`\tag`，以及需要文档上下文的 `\ref` / `\eqref`）**不会**被剥掉，仍然照常
+报渲染错误。
 
 如果你想手动重新下载 backend：
 

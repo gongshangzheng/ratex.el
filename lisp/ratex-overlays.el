@@ -4,6 +4,9 @@
 
 (defvar-local ratex--overlays nil)
 
+(defvar-local ratex--scale 1.0
+  "Text scale currently applied to rendered images in this buffer.")
+
 (defun ratex--overlay-table ()
   "Return the overlay table for the current buffer."
   (unless (hash-table-p ratex--overlays)
@@ -28,19 +31,40 @@
     (remhash key table)))
 
 (defun ratex-show-overlay (key beg end image &optional help-echo fragment style)
-  "Show IMAGE for KEY at BEG..END with optional HELP-ECHO, FRAGMENT, and STYLE."
-  (let ((table (ratex--overlay-table))
-        (overlay nil))
-    (ratex-remove-overlay key)
-    (setq overlay (make-overlay beg end))
-    (overlay-put overlay 'ratex-image image)
-    (overlay-put overlay 'evaporate t)
-    (overlay-put overlay 'ratex-key key)
-    (overlay-put overlay 'ratex-fragment fragment)
-    (ratex--overlay-apply-style overlay (or style 'inline))
-    (puthash key overlay table))
-  (when help-echo
-    (overlay-put (gethash key (ratex--overlay-table)) 'help-echo help-echo)))
+  "Show IMAGE for KEY at BEG..END with optional HELP-ECHO, FRAGMENT, and STYLE.
+
+When the overlay already covers BEG..END with the same IMAGE and STYLE it
+is reused instead of being rebuilt, which is what keeps repeated display
+of an unchanged formula cheap."
+  (let* ((table (ratex--overlay-table))
+         (style (or style 'inline))
+         (existing (gethash key table))
+         (reuse (and (overlayp existing)
+                     (= beg (overlay-start existing))
+                     (= end (overlay-end existing))
+                     (eq style (overlay-get existing 'ratex-render-style))
+                     (equal image (overlay-get existing 'ratex-image))))
+         (overlay existing))
+    (if reuse
+        (progn
+          (overlay-put existing 'ratex-fragment fragment)
+          (overlay-put existing 'ratex-scale ratex--scale)
+          (when help-echo
+            (overlay-put existing 'help-echo help-echo))
+          existing)
+      (when (overlayp existing)
+        (delete-overlay existing))
+      (setq overlay (make-overlay beg end))
+      (overlay-put overlay 'ratex-image image)
+      (overlay-put overlay 'evaporate t)
+      (overlay-put overlay 'ratex-key key)
+      (overlay-put overlay 'ratex-fragment fragment)
+      (overlay-put overlay 'ratex-scale ratex--scale)
+      (ratex--overlay-apply-style overlay style)
+      (when help-echo
+        (overlay-put overlay 'help-echo help-echo))
+      (puthash key overlay table)
+      overlay)))
 
 (defun ratex-overlay-keys ()
   "Return overlay keys currently shown in the current buffer."
@@ -84,12 +108,6 @@
     (when (overlayp overlay)
       (overlay-get overlay 'ratex-image))))
 
-(defun ratex-set-overlay-style (key style)
-  "Set STYLE for overlay KEY."
-  (let ((overlay (ratex-overlay-for-key key)))
-    (when (overlayp overlay)
-      (ratex--overlay-apply-style overlay style))))
-
 (defun ratex--overlay-apply-style (overlay style)
   "Apply STYLE to OVERLAY using its stored image."
   (let ((image (overlay-get overlay 'ratex-image)))
@@ -103,15 +121,15 @@
       (overlay-put overlay 'display image))))
   (overlay-put overlay 'ratex-render-style style))
 
+(declare-function ratex--update-scale "ratex-render")
+
 (defun ratex-update-overlay-scale ()
-  "Update the scale of all RaTeX overlays in the current buffer."
-  (let ((current-scale (if (bound-and-true-p text-scale-mode)
-                           (expt text-scale-mode-step text-scale-mode-amount)
-                         1.0)))
-    (dolist (ov (overlays-in (point-min) (point-max)))
-      (let ((img (overlay-get ov 'ratex-image)))
-        (when (and img (eq (car img) 'image))
-          (setf (image-property img :scale) current-scale))))))
+  "Apply the current text scale to previews in the current buffer.
+
+Only the formulas that are displayed get re-rendered immediately; the
+rest pick up the new scale when they become visible."
+  (when (fboundp 'ratex--update-scale)
+    (ratex--update-scale)))
 
 (add-hook 'text-scale-mode-hook #'ratex-update-overlay-scale)
 
