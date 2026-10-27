@@ -8,6 +8,13 @@
   '(("\\[" . "\\]")
     ("\\(" . "\\)")))
 
+(defconst ratex--fragment-max-retries 32
+  "Maximum backward retries when a candidate fragment is rejected.
+
+Retries only happen for candidates that contain point but are escaped or
+live in a code context, so this bound guards against pathological input
+instead of describing the normal path.")
+
 (defun ratex-fragments-in-buffer (&optional beg end)
   "Return all math fragments between BEG and END.
 
@@ -31,39 +38,55 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
              return fragment)))
 
 (defun ratex--fragment-with-delimiters (open close)
-  "Return fragment bounded by OPEN and CLOSE around point."
+  "Return fragment bounded by OPEN and CLOSE around point.
+
+Each OPEN pairs with the first CLOSE that follows it, so once the nearest
+preceding OPEN is paired with a CLOSE at or before point, no earlier OPEN
+can contain point and the search stops instead of walking backwards over
+the whole buffer.  This keeps the cost independent of how many fragments
+precede point."
   (save-excursion
     (let ((pos (point))
           (open-len (length open))
           (close-len (length close))
+          (retries 0)
           fragment)
-      (while (and (not fragment) (search-backward open nil t))
-        (let ((begin (point)))
-          (if (or (ratex--escaped-at-p begin)
-                  (ratex--code-context-at-p begin))
-              (goto-char (max (point-min) (1- begin)))
-            (let ((content-begin (+ begin open-len))
-                  found-end
-                  content-end)
-              (goto-char content-begin)
-              (while (and (not found-end) (search-forward close nil t))
-                (let ((end-start (- (point) close-len)))
-                  (unless (or (ratex--escaped-at-p end-start)
-                              (ratex--code-context-at-p end-start))
-                    (setq found-end (point))
-                    (setq content-end end-start))))
-              (if (and found-end
-                       (<= content-begin pos)
-                       (<= pos content-end))
-                  (setq fragment
-                        (list :begin begin
-                              :end found-end
-                              :content (buffer-substring-no-properties
-                                        content-begin
-                                        content-end)
-                              :open open
-                              :close close))
-                (goto-char (max (point-min) (1- begin))))))))
+      (while (and (not fragment)
+                  (< retries ratex--fragment-max-retries)
+                  (search-backward open nil t))
+        (cl-incf retries)
+        (let* ((begin (point))
+               (content-begin (+ begin open-len))
+               (found-end (save-excursion
+                            (goto-char content-begin)
+                            (when (search-forward close nil t)
+                              (point))))
+               (content-end (and found-end (- found-end close-len))))
+          (cond
+           ;; Unterminated OPEN: nothing before it can be closed either.
+           ((not found-end)
+            (setq retries ratex--fragment-max-retries))
+           ;; Point sits inside the OPEN token itself: keep looking further back.
+           ((< pos content-begin)
+            (goto-char (max (point-min) (1- begin))))
+           ;; The pair ends at or before point: every earlier OPEN ends earlier.
+           ((> pos content-end)
+            (setq retries ratex--fragment-max-retries))
+           ;; Only now validate: escaping and code contexts are rare.
+           ((or (ratex--escaped-at-p begin)
+                (ratex--code-context-at-p begin)
+                (ratex--escaped-at-p content-end)
+                (ratex--code-context-at-p content-end))
+            (goto-char (max (point-min) (1- begin))))
+           (t
+            (setq fragment
+                  (list :begin begin
+                        :end found-end
+                        :content (buffer-substring-no-properties
+                                  content-begin content-end)
+                        :open open
+                        :close close
+                        :tick (buffer-chars-modified-tick)))))))
       fragment)))
 
 (defun ratex--fragments-with-delimiters (open close &optional beg end)
@@ -73,6 +96,7 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
     (let ((open-len (length open))
           (close-len (length close))
           (limit (copy-marker (or end (point-max))))
+          (scan-tick (buffer-chars-modified-tick))
           fragments)
       (while (search-forward open limit t)
         (let ((begin (- (point) open-len)))
@@ -92,7 +116,8 @@ The plist contains `:begin', `:end' and `:content' when a fragment is found."
                             :end found-end
                             :content (buffer-substring-no-properties content-begin content-end)
                             :open open
-                            :close close)
+                            :close close
+                            :tick scan-tick)
                       fragments))))))
       (set-marker limit nil)
       (nreverse fragments))))
