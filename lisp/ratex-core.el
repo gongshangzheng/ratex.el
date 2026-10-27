@@ -43,6 +43,24 @@ Set this when auto-detection cannot reliably find the backend location."
   "GitHub repository that hosts backend release binaries."
   :type 'string)
 
+(defcustom ratex-backend-version "0.1.1"
+  "Release version of the backend binary this ratex.el expects.
+
+The download URL pins this version instead of following the latest release, so
+a matching release must exist (`v<version>' tag with the platform assets).  It
+must stay in sync with the `version' field of `backend/Cargo.toml'; a test
+asserts that."
+  :type 'string)
+
+(defvar ratex--backend-reported-version nil
+  "Version string reported by the running backend, or nil when unknown.")
+
+(defvar ratex--version-mismatch-handled nil
+  "Non-nil once a version mismatch was acted upon for the current process.")
+
+(defvar ratex--version-redownload-done nil
+  "Non-nil once a mismatched backend was re-downloaded in this session.")
+
 (defvar ratex--process nil)
 (defvar ratex--process-buffer " *ratex-backend*")
 (defvar ratex--pending (make-hash-table :test #'eql))
@@ -143,10 +161,11 @@ it waiting forever."
   (setq ratex--process nil))
 
 (defun ratex-download-backend ()
-  "Download the backend binary from GitHub Releases asynchronously."
+  "Download the backend binary of `ratex-backend-version' from GitHub Releases."
   (interactive)
   (if ratex--download-in-progress
       (message "RaTeX backend download already in progress.")
+    (setq ratex--version-redownload-done nil)
     (ratex--download-backend-async)))
 
 (defun ratex--download-backend-async ()
@@ -325,7 +344,44 @@ pending instead of dropping the response silently."
            :connection-type 'pipe
            :noquery t
            :filter #'ratex--process-filter
-           :sentinel #'ratex--process-sentinel))))
+           :sentinel #'ratex--process-sentinel))
+    (ratex--check-backend-version)))
+
+(defun ratex-backend-version-matches-p (reported)
+  "Return non-nil when REPORTED matches `ratex-backend-version'."
+  (and (stringp reported)
+       (string= (string-trim reported) ratex-backend-version)))
+
+(defun ratex--check-backend-version ()
+  "Ping the running backend and act when its version is not the expected one."
+  (ratex-ping
+   (lambda (response)
+     (when (eq (alist-get 'ok response) t)
+       (let ((reported (alist-get 'version response)))
+         (setq ratex--backend-reported-version reported)
+         (when (not (ratex-backend-version-matches-p reported))
+           (ratex--handle-version-mismatch reported)))))))
+
+(defun ratex--handle-version-mismatch (reported)
+  "Act when the backend REPORTED a version other than `ratex-backend-version'.
+
+With `ratex-auto-download-backend' the pinned release replaces the running
+binary; otherwise the mismatch is reported visibly.  At most one automatic
+re-download happens per session, so a release that still does not match cannot
+loop."
+  (if (not ratex-auto-download-backend)
+      (ratex--warn
+       (format "RaTeX backend version %s does not match required %s; run M-x ratex-download-backend to install %s"
+               (or reported "unknown") ratex-backend-version ratex-backend-version))
+    (if ratex--version-redownload-done
+        (ratex--warn
+         (format "RaTeX backend version %s still does not match required %s after re-download"
+                 (or reported "unknown") ratex-backend-version))
+      (setq ratex--version-redownload-done t)
+      (message "RaTeX backend %s does not match required %s; downloading %s..."
+               (or reported "unknown") ratex-backend-version ratex-backend-version)
+      (ratex-stop-backend)
+      (ratex--download-backend-async))))
 
 (defun ratex--backend-ready-p ()
   "Return non-nil if the backend binary exists and looks executable."
@@ -366,6 +422,8 @@ pending instead of dropping the response silently."
                    "backend binary: %s\n"
                    "binary exists: %s\n"
                    "binary valid: %s\n"
+                   "expected version: %s\n"
+                   "reported version: %s\n"
                    "auto download: %s\n"
                    "release repo: %s\n"
                    "download url: %s")
@@ -373,6 +431,8 @@ pending instead of dropping the response silently."
            binary
            (and (stringp binary) (file-exists-p binary))
            valid
+           ratex-backend-version
+           (or ratex--backend-reported-version "unknown")
            ratex-auto-download-backend
            ratex-backend-release-repo
            download-url)))
@@ -394,10 +454,10 @@ pending instead of dropping the response silently."
     (write-region body-start (point-max) path nil 'silent)))
 
 (defun ratex--backend-download-url ()
-  "Return the GitHub Release URL for the current platform backend."
-  (format "%s/%s"
-          (format "https://github.com/%s/releases/latest/download"
-                  ratex-backend-release-repo)
+  "Return the pinned-version GitHub Release URL for the platform backend."
+  (format "https://github.com/%s/releases/download/v%s/%s"
+          ratex-backend-release-repo
+          ratex-backend-version
           (ratex--backend-asset-name)))
 
 (defun ratex--backend-asset-name ()
